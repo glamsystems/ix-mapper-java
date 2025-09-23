@@ -63,6 +63,41 @@ public record IxMapConfig(ProxyType proxyType,
         throw new IllegalStateException("Invalid configuration: Only one or none dynamic accounts is supported for IxMapConfig without a proxy discriminator.");
       }
     } else {
+      final boolean[] checkIndexes = new boolean[dynamicAccounts.size() + staticAccounts.size() + indexMap.length];
+      for (final var account : dynamicAccounts) {
+        final int index = account.index();
+        if (checkIndexes[index]) {
+          throw new IllegalStateException(String.format(
+              "Duplicate index %d in dynamic accounts. CPI IX: %s, Proxy IX: %s",
+              account.index(), cpiIxName, proxyIxName
+          ));
+        } else {
+          checkIndexes[index] = true;
+        }
+      }
+      for (final var account : staticAccounts) {
+        final int index = account.index();
+        if (checkIndexes[index]) {
+          throw new IllegalStateException(String.format(
+              "Duplicate index %d in static accounts. CPI IX: %s, Proxy IX: %s",
+              account.index(), cpiIxName, proxyIxName
+          ));
+        } else {
+          checkIndexes[index] = true;
+        }
+      }
+      for (final var index : indexMap) {
+        if (index >= 0) {
+          if (checkIndexes[index]) {
+            throw new IllegalStateException(String.format(
+                "Duplicate index %d in index map. CPI IX: %s, Proxy IX: %s",
+                index, cpiIxName, proxyIxName
+            ));
+          } else {
+            checkIndexes[index] = true;
+          }
+        }
+      }
       return IxProxy.createProxy(
           invokedProxyProgram,
           cpiDiscriminator,
