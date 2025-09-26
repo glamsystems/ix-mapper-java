@@ -69,7 +69,7 @@ public record IxMapConfig(ProxyType proxyType,
         if (checkIndexes[index]) {
           throw new IllegalStateException(String.format(
               "Duplicate index %d in dynamic accounts. CPI IX: %s, Proxy IX: %s",
-              account.index(), cpiIxName, proxyIxName
+              index, cpiIxName, proxyIxName
           ));
         } else {
           checkIndexes[index] = true;
@@ -80,7 +80,7 @@ public record IxMapConfig(ProxyType proxyType,
         if (checkIndexes[index]) {
           throw new IllegalStateException(String.format(
               "Duplicate index %d in static accounts. CPI IX: %s, Proxy IX: %s",
-              account.index(), cpiIxName, proxyIxName
+              index, cpiIxName, proxyIxName
           ));
         } else {
           checkIndexes[index] = true;

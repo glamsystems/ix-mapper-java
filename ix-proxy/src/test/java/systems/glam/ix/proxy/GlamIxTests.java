@@ -81,9 +81,9 @@ final class GlamIxTests {
     final int index = accountConfig.index();
     final boolean w = accountConfig.writable();
     return switch (accountConfig.name()) {
-      case "glam_state" -> (mappedAccounts, _, _, vaultAccounts) -> mappedAccounts[index] = w
+      case "glam_state" -> (mappedAccounts, _, _, _, vaultAccounts) -> mappedAccounts[index] = w
           ? vaultAccounts.writeGlamState() : vaultAccounts.readGlamState();
-      case "glam_vault" -> (mappedAccounts, _, _, vaultAccounts) -> mappedAccounts[index] = w
+      case "glam_vault" -> (mappedAccounts, _, _, _, vaultAccounts) -> mappedAccounts[index] = w
           ? vaultAccounts.writeGlamVault() : vaultAccounts.readGlamVault();
       case "glam_signer" -> accountConfig.createFeePayerAccount();
       case "cpi_program" -> accountConfig.createReadCpiProgram();

@@ -45,7 +45,13 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
 
     final var mappedAccounts = new AccountMeta[this.numAccounts + numExtraAccounts];
     for (final var dynamicAccount : dynamicAccounts) {
-      dynamicAccount.setAccount(mappedAccounts, readCpiProgram, feePayer, runtimeAccounts);
+      dynamicAccount.setAccount(
+          mappedAccounts,
+          invokedProxyProgram.publicKey(),
+          readCpiProgram,
+          feePayer,
+          runtimeAccounts
+      );
     }
     for (final var staticAccount : staticAccounts) {
       staticAccount.setAccount(mappedAccounts);
