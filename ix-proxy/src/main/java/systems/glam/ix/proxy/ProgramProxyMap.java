@@ -11,20 +11,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-final class ProgramProxyMap<A> implements TransactionMapper<A> {
-
-  private final PublicKey invokedProxyProgram;
-  private final Map<PublicKey, ProgramProxy<A>> programProxyMap;
-
-  ProgramProxyMap(final PublicKey invokedProxyProgram, final Map<PublicKey, ProgramProxy<A>> programProxyMap) {
-    this.invokedProxyProgram = invokedProxyProgram;
-    this.programProxyMap = programProxyMap;
-  }
-
-  @Override
-  public PublicKey invokedProxyProgram() {
-    return invokedProxyProgram;
-  }
+record ProgramProxyMap<A>(PublicKey invokedProxyProgram,
+                          Map<PublicKey, ProgramProxy<A>> programProxyMap) implements TransactionMapper<A> {
 
   @Override
   public ProgramProxy<A> programProxy(final PublicKey programId) {

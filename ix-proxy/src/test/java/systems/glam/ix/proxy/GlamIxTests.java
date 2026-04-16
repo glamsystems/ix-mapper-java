@@ -92,7 +92,7 @@ final class GlamIxTests {
   };
 
   private static final TransactionMapper<GlamVaultAccounts> txMapper = createMapper(
-      Path.of("../glam/remapping"),
+      Path.of("../glam/mapping-configs-v0"),
       AccountMeta.createInvoked(GlamIxTests.INVOKED_PROGRAM),
       new HashMap<>(),
       DYNAMIC_ACCOUNT_FACTORY
@@ -111,7 +111,7 @@ final class GlamIxTests {
 
   @Test
   void testPayerProxy() throws IOException {
-    final var mappingJson = Files.readAllBytes(Path.of("../glam/remapping/ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL.json"));
+    final var mappingJson = Files.readAllBytes(Path.of("../glam/mapping-configs-v0/ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL.json"));
 
     final var programProxies = createProxies(mappingJson);
     assertEquals(1, programProxies.size());
@@ -128,7 +128,7 @@ final class GlamIxTests {
 
   @Test
   void testGlamDriftRemapping() throws IOException {
-    final var mappingJson = Files.readAllBytes(Path.of("../glam/remapping/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH.json"));
+    final var mappingJson = Files.readAllBytes(Path.of("../glam/mapping-configs-v0/dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH.json"));
 
     final var programProxies = createProxies(mappingJson);
     assertEquals(1, programProxies.size());

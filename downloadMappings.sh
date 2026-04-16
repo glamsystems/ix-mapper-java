@@ -3,9 +3,9 @@
 set -e
 
 rm -rf glam/
-git clone -n --depth=1 --filter=tree:0 https://github.com/glamsystems/glam-sdk.git glam
+git clone -n --depth=1 --filter=tree:0 https://github.com/glamsystems/ix-mapper-ts.git glam
 cd glam
-git sparse-checkout set --no-cone /remapping /remapping_v1
+git sparse-checkout set --no-cone /mapping-configs-v0 /mapping-configs-v1
 git checkout
 
 cd ..
