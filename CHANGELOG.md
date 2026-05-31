@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.0.4](https://github.com/glamsystems/ix-mapper-java/compare/25.0.3...25.0.4) (2026-05-31)
+
+
+### Features
+
+* trigger release ([064716b](https://github.com/glamsystems/ix-mapper-java/commit/064716b0b28eb70839adb4efdc9abbbb15aa6d3c))
+
 ## [25.0.3](https://github.com/glamsystems/ix-mapper-java/compare/25.0.2...25.0.3) (2026-05-31)
 
 
