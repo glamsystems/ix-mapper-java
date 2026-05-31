@@ -4,10 +4,8 @@ set -e
 
 rm -rf glam/
 git clone -n --depth=1 --filter=tree:0 https://github.com/glamsystems/ix-mapper-ts.git glam
-cd glam
-git sparse-checkout set --no-cone /mapping-configs-v0 /mapping-configs-v1
-git checkout
 
-cd ..
+git -C glam sparse-checkout set --no-cone /mapping-configs-v1 /mapping-configs-v1-staging
+git -C glam checkout
 
 exit 0

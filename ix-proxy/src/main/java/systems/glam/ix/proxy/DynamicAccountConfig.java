@@ -27,7 +27,11 @@ public record DynamicAccountConfig(String name,
   }
 
   public <A> DynamicAccount<A> createReadCpiProgram() {
-    return new IndexedCpiProgram<>(index);
+    return new IndexedReadOnlyProgram<>(index);
+  }
+
+  public <A> DynamicAccount<A> createReadIntegrationAuthority() {
+    return new IndexedReadOnlyProgram<>(index);
   }
 
   private static final class Parser implements FieldBufferPredicate {

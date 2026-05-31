@@ -201,6 +201,8 @@ public record IxMapConfig(ProxyType proxyType,
         } else {
           this.indexMap = NO_INDEX_MAP;
         }
+      } else if (fieldEquals("program_id_placeholder_indices", buf, offset, len)) {
+        ji.skip();
       } else {
         throw new IllegalStateException("Unknown IxMapConfig field " + new String(buf, offset, len));
       }

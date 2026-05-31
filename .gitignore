@@ -49,3 +49,5 @@ target/
 !gradle-wrapper.jar
 
 /glam
+/symlinks/
+/.junie/
