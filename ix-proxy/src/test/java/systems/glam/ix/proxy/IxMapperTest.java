@@ -656,7 +656,7 @@ final class IxMapperTest {
     );
 
     final var result = fixSignerAccounts(ix, glamState, glamSigner, true);
-    expectAccountMeta(result.accounts().get(0), glamSigner, true, false);
+    expectAccountMeta(result.accounts().getFirst(), glamSigner, true, false);
   }
 
   // ===== PDA utilities =====
