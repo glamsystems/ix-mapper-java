@@ -2,13 +2,15 @@ package systems.glam.ix.proxy;
 
 import software.sava.core.accounts.meta.AccountMeta;
 import software.sava.core.programs.Discriminator;
-import systems.comodal.jsoniter.FieldBufferPredicate;
+import systems.comodal.jsoniter.CharBufferFunction;
+import systems.comodal.jsoniter.ContextFieldIndexPredicate;
+import systems.comodal.jsoniter.FieldMatcher;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.util.*;
 import java.util.function.Function;
 
-import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
+import static systems.comodal.jsoniter.JsonIterator.fieldEqualsIgnoreCase;
 
 public record IxMapConfig(ProxyType proxyType,
                           String cpiIxName,
@@ -26,9 +28,7 @@ public record IxMapConfig(ProxyType proxyType,
   public static IxMapConfig parseConfig(final Map<AccountMeta, AccountMeta> accountMetaCache,
                                         final Map<IndexedAccountMeta, IndexedAccountMeta> indexedAccountMetaCache,
                                         final JsonIterator ji) {
-    final var parser = new Parser(accountMetaCache, indexedAccountMetaCache);
-    ji.testObject(parser);
-    return parser.create();
+    return ji.testObject(new Parser(accountMetaCache, indexedAccountMetaCache), FIELDS, FIELD_PARSER).create();
   }
 
   public <A> IxProxy<A> createProxy(final AccountMeta invokedProxyProgram,
@@ -109,7 +109,51 @@ public record IxMapConfig(ProxyType proxyType,
     }
   }
 
-  private static final class Parser implements FieldBufferPredicate {
+  // Small value set: the linear ignore-case chain beats a matcher at this
+  // size and keeps span access for the unknown-value error.
+  private static final CharBufferFunction<ProxyType> PROXY_TYPE_PARSER = (buf, offset, len) -> {
+    if (fieldEqualsIgnoreCase("payer", buf, offset, len)) {
+      return ProxyType.PAYER;
+    }
+    throw new IllegalStateException("Unknown IxMapConfig proxy type " + new String(buf, offset, len));
+  };
+
+  private static final FieldMatcher FIELDS = FieldMatcher.of(
+      "type",
+      "src_ix_name",
+      "src_discriminator",
+      "dst_ix_name",
+      "dst_discriminator",
+      "dynamic_accounts",
+      "static_accounts",
+      "index_map",
+      "program_id_placeholder_indices"
+  );
+
+  private static final ContextFieldIndexPredicate<Parser> FIELD_PARSER = (parser, fieldIndex, ji) -> {
+    switch (fieldIndex) {
+      case 0 -> parser.type = ji.applyChars(PROXY_TYPE_PARSER);
+      case 1 -> parser.cpiIxName = ji.readString();
+      case 2 -> parser.cpiDiscriminator = Discriminator.createDiscriminator(ji.readByteArray(8));
+      case 3 -> parser.proxyIxName = ji.readString();
+      case 4 -> parser.proxyDiscriminator = Discriminator.createDiscriminator(ji.readByteArray(8));
+      case 5 -> {
+        final var dynamicAccounts = ji.readList(DynamicAccountConfig::parseConfig);
+        parser.dynamicAccounts = dynamicAccounts.isEmpty() ? Parser.NO_DYNAMIC_ACCOUNTS : List.copyOf(dynamicAccounts);
+      }
+      case 6 -> {
+        final var staticAccounts = ji.readList(sub ->
+            IndexedAccountMeta.parseConfig(parser.accountMetaCache, parser.indexedAccountMetaCache, sub));
+        parser.staticAccounts = staticAccounts.isEmpty() ? Parser.NO_STATIC_ACCOUNTS : List.copyOf(staticAccounts);
+      }
+      case 7 -> parser.indexMap = ji.readIntArray();
+      case 8 -> ji.skip(); // program_id_placeholder_indices: consumed by ix-mapper-ts, unused here
+      default -> throw new IllegalStateException("Unknown IxMapConfig field at " + ji.currentBuffer());
+    }
+    return true;
+  };
+
+  private static final class Parser {
 
     private static final List<DynamicAccountConfig> NO_DYNAMIC_ACCOUNTS = List.of();
     private static final List<IndexedAccountMeta> NO_STATIC_ACCOUNTS = List.of();
@@ -144,69 +188,6 @@ public record IxMapConfig(ProxyType proxyType,
           staticAccounts == null ? NO_STATIC_ACCOUNTS : staticAccounts,
           indexMap == null ? NO_INDEX_MAP : indexMap
       );
-    }
-
-    private static Discriminator parseDiscriminator(final JsonIterator ji) {
-      int i = 0;
-      final int mark = ji.mark();
-      while (ji.readArray()) {
-        ji.skip();
-        ++i;
-      }
-      final byte[] discriminator = new byte[i];
-      ji.reset(mark);
-      for (i = 0; ji.readArray(); ++i) {
-        discriminator[i] = (byte) ji.readInt();
-      }
-      return Discriminator.createDiscriminator(discriminator);
-    }
-
-    @Override
-    public boolean test(final char[] buf, final int offset, final int len, final JsonIterator ji) {
-      if (fieldEquals("type", buf, offset, len)) {
-        type = ProxyType.valueOf(ji.readString().toUpperCase(Locale.ENGLISH));
-      } else if (fieldEquals("src_ix_name", buf, offset, len)) {
-        cpiIxName = ji.readString();
-      } else if (fieldEquals("src_discriminator", buf, offset, len)) {
-        cpiDiscriminator = parseDiscriminator(ji);
-      } else if (fieldEquals("dst_ix_name", buf, offset, len)) {
-        proxyIxName = ji.readString();
-      } else if (fieldEquals("dst_discriminator", buf, offset, len)) {
-        proxyDiscriminator = parseDiscriminator(ji);
-      } else if (fieldEquals("dynamic_accounts", buf, offset, len)) {
-        final var dynamicAccounts = new ArrayList<DynamicAccountConfig>();
-        while (ji.readArray()) {
-          dynamicAccounts.add(DynamicAccountConfig.parseConfig(ji));
-        }
-        this.dynamicAccounts = dynamicAccounts.isEmpty() ? NO_DYNAMIC_ACCOUNTS : List.copyOf(dynamicAccounts);
-      } else if (fieldEquals("static_accounts", buf, offset, len)) {
-        final var staticAccounts = new ArrayList<IndexedAccountMeta>();
-        while (ji.readArray()) {
-          staticAccounts.add(IndexedAccountMeta.parseConfig(accountMetaCache, indexedAccountMetaCache, ji));
-        }
-        this.staticAccounts = staticAccounts.isEmpty() ? NO_STATIC_ACCOUNTS : List.copyOf(staticAccounts);
-      } else if (fieldEquals("index_map", buf, offset, len)) {
-        int i = 0;
-        final int mark = ji.mark();
-        for (; ji.readArray(); ++i) {
-          ji.skip();
-        }
-        if (i > 0) {
-          ji.reset(mark);
-          final int[] indexMap = new int[i];
-          for (i = 0; ji.readArray(); ++i) {
-            indexMap[i] = ji.readInt();
-          }
-          this.indexMap = indexMap;
-        } else {
-          this.indexMap = NO_INDEX_MAP;
-        }
-      } else if (fieldEquals("program_id_placeholder_indices", buf, offset, len)) {
-        ji.skip();
-      } else {
-        throw new IllegalStateException("Unknown IxMapConfig field " + new String(buf, offset, len));
-      }
-      return true;
     }
   }
 }

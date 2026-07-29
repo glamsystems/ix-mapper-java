@@ -82,8 +82,9 @@ accepted baseline in `ix-proxy/config/pitest/` and fails on anything new. The
 baseline was **seeded with the full pre-existing survivor population** — that
 is untriaged debt made explicit, not acceptance; `config/pitest/README.md`
 tracks the triage state. `EXPERIMENTAL_NAKED_RECEIVER` was trialed and
-generated zero additional mutants (355 → 355), so the suite stays on plain
-`STRONGER` — re-trial if fluent/builder-style code is introduced.
+generated zero additional mutants (twice — latest 311 → 311), so the suite
+stays on plain `STRONGER` — re-trial if fluent/builder-style code is
+introduced.
 
 One fuzz target: `fuzzMappingConfig` (`MappingConfigFuzz`) drives
 `ProgramMapConfig.parseConfig` — the parser for external, downloaded config

@@ -39,12 +39,19 @@ refactored away, or moved below with a reason.
   `IxMapperTest` executes the code but asserts too little of it. Use
   `pitestIxProxyDebt` to rank the remainder by class when picking the next
   cluster.
+- **Refreshed 2026-07-29** after migrating `IxMapConfig.Parser` to the
+  json-iterator `FieldMatcher`/`readByteArray`/`readIntArray` APIs: 284 rows
+  (104 `SURVIVED`, 180 `NO_COVERAGE`) of 311 generated — the refactor
+  deleted the hand-rolled two-pass `mark()`/`reset()` array loops and their
+  44 mutants outright; the 7 rows in `Parser.create` carried across as pure
+  line shifts.
 
 ## Mutator-set trials
 
 `STRONGER` is the default. `EXPERIMENTAL_NAKED_RECEIVER` was trialed
 2026-07-29 (`-PtrialMutators=STRONGER,EXPERIMENTAL_NAKED_RECEIVER`):
-355 generated without → 355 with, zero fires — this code returns records,
+355 generated without → 355 with, zero fires (re-trialed after the
+FieldMatcher migration the same day: 311 → 311) — this code returns records,
 arrays and fresh instructions, not fluent receivers, so it stays off.
 Re-trial if builder-style code is introduced. No mutated class performs
 `BigInteger`/`BigDecimal` arithmetic, so `EXPERIMENTAL_BIG_INTEGER` was not

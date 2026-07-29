@@ -1,6 +1,5 @@
 package systems.glam.ix.proxy;
 
-import org.junit.jupiter.api.Test;
 import software.sava.core.accounts.PublicKey;
 import software.sava.core.accounts.meta.AccountMeta;
 import software.sava.core.programs.Discriminator;
