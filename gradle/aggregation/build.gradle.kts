@@ -9,6 +9,6 @@ dependencies {
 tasks.register("publishToGitHubPackages") {
   group = "publishing"
   dependsOn(
-    ":ix-proxy:publishMavenJavaPublicationToSavaGithubPackagesRepository"
+    ":ix-proxy:publishMavenJavaPublicationToSavaGithubPackagesPublishRepository"
   )
 }

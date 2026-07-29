@@ -51,3 +51,9 @@ target/
 /glam
 /symlinks/
 /.junie/
+
+# arcmutate incremental-analysis history (machine-local, written by the hardening plugin)
+.pitest-history/
+
+# atomic baseline-write temp; a kill in the write window can leave one behind
+*.csv.tmp

@@ -11,21 +11,6 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - id: setup
-        uses: sava-software/sava-build@main
-        with:
-          default-java-version: ${{ vars.JAVA_VERSION }}
-          jdk-src: ${{ vars.JDK_SRC }}
-          gradle-java-version: ${{ vars.GRADLE_JAVA_VERSION }}
-
-      - name: Download Mapping Files
-        run: ./downloadMappings.sh
-
-      - name: Gradle Check
-        run: ./gradlew --stacktrace -PjavaVersion=${{ steps.setup.outputs.java-version }} check
-        env:
-          ORG_GRADLE_PROJECT_savaGithubPackagesUsername: ${{ env.GITHUB_ACTOR }}
-          ORG_GRADLE_PROJECT_savaGithubPackagesPassword: ${{ secrets.GITHUB_TOKEN }}
+    uses: sava-software/sava-build/.github/workflows/build.yml@main
+    secrets:
+      READ_SAVA_PACKAGES: ${{ secrets.READ_SAVA_PACKAGES }}

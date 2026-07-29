@@ -95,7 +95,7 @@ Instruction[] mappedInstructions = txMapper.mapInstructions(
 ## Program Mapping Configuration Files
 
 Mapping files define the necessary information for translating a source program instruction that will be called via CPI
-from the destination proxy program.  More example configurations can be found in the [glam-sdk repository](https://github.com/glamsystems/glam-sdk/tree/main/remapping)
+from the destination proxy program.  More example configurations can be found in the [ix-mapper-ts repository](https://github.com/glamsystems/ix-mapper-ts)
 
 ### Example Configuration
 
@@ -186,11 +186,22 @@ number.
 
 ## Build & Tests
 
-Mapping configuration files from the [glam-sdk repository](https://github.com/glamsystems/glam-sdk/tree/main/remapping) 
-are needed to run the tests.  Run [./downloadMappings.sh](downloadMappings.sh) to pull only those files into this project.
+```shell
+./gradlew check
+```
+
+Mapping configuration files from the [ix-mapper-ts repository](https://github.com/glamsystems/ix-mapper-ts)
+are needed to run the tests. The build clones them into the untracked `glam/` directory automatically when it is
+missing (see [./downloadMappings.sh](downloadMappings.sh)).
 
 ### Sync Re-mapping JSON Files
 
 ```shell
 ./syncMappings.sh
 ```
+
+## Hardening
+
+The `ix-proxy` module registers the PIT mutation suite `pitestIxProxy` and the Jazzer fuzz target `fuzzMappingConfig`
+via sava-build's hardening feature; unkilled mutants are ratcheted against the accepted baseline in
+[ix-proxy/config/pitest](ix-proxy/config/pitest). See [AGENTS.md](AGENTS.md) for the process contract.
