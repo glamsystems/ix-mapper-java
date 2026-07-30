@@ -41,4 +41,10 @@ hardening {
     // nesting and long literals without clipping the real seeds
     maxLen = 65536
   }
+  fuzz.register("ixMapper") {
+    targetClass = "systems.glam.ix.proxy.IxMapperFuzz"
+    seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/ixMapper")
+    // 2 carve bytes + instruction data; real instructions are tens of bytes
+    maxLen = 4096
+  }
 }

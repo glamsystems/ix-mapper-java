@@ -202,6 +202,6 @@ missing (see [./downloadMappings.sh](downloadMappings.sh)).
 
 ## Hardening
 
-The `ix-proxy` module registers the PIT mutation suite `pitestIxProxy` and the Jazzer fuzz target `fuzzMappingConfig`
+The `ix-proxy` module registers the PIT mutation suite `pitestIxProxy` and the Jazzer fuzz targets `fuzzMappingConfig` and `fuzzIxMapper`
 via sava-build's hardening feature; unkilled mutants are ratcheted against the accepted baseline in
 [ix-proxy/config/pitest](ix-proxy/config/pitest). See [AGENTS.md](AGENTS.md) for the process contract.

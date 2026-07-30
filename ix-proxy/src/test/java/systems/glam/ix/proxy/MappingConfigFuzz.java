@@ -1,5 +1,6 @@
 package systems.glam.ix.proxy;
 
+import software.sava.core.accounts.PublicKey;
 import software.sava.core.accounts.meta.AccountMeta;
 import systems.comodal.jsoniter.JsonIterator;
 
@@ -13,11 +14,13 @@ import java.util.HashMap;
 ///
 /// The fuzz payload is arbitrary bytes parsed as the config JSON, exactly as
 /// `createProxies` parses a file's bytes: `JsonIterator.parse(bytes)` then
-/// `ProgramMapConfig.parseConfig`. Malformed-input contract: garbage in ->
-/// `RuntimeException` out (a bad config file is a startup failure, not a
-/// hang). Jazzer flags what the contract forbids — hangs (deeply nested JSON,
-/// huge number literals), memory exhaustion, and any non-`RuntimeException`
-/// throwable.
+/// `ProgramMapConfig.parseConfig`, then `createProgramProxies` — the full
+/// construction path a consumer drives at startup, including the
+/// `IxMapConfig.createProxy` mapping validation. Malformed-input contract:
+/// garbage in -> `RuntimeException` out (a bad config file is a startup
+/// failure, not a hang). Jazzer flags what the contract forbids — hangs
+/// (deeply nested JSON, huge number literals), memory exhaustion, and any
+/// non-`RuntimeException` throwable.
 ///
 /// Seeded from real mapping configs under
 /// src/test/resources/fuzz/mappingConfig — the nested instruction/account
@@ -29,6 +32,9 @@ import java.util.HashMap;
 ///
 /// Run with `./gradlew :ix-proxy:fuzzMappingConfig [-PmaxFuzzTime=<seconds>]`.
 public final class MappingConfigFuzz {
+
+  private static final AccountMeta DEFAULT_INVOKED =
+      AccountMeta.createInvoked(PublicKey.createPubKey(new byte[PublicKey.PUBLIC_KEY_LENGTH]));
 
   public static void fuzzerTestOneInput(final byte[] data) {
     final ProgramMapConfig config;
@@ -54,5 +60,13 @@ public final class MappingConfigFuzz {
       ix.dynamicAccounts();
       ix.staticAccounts();
     });
+    try {
+      // a config that parses but describes an invalid mapping shape must also
+      // be rejected here, at construction — still a startup failure, not a
+      // hang or a deferred blow-up on the remapping path
+      config.createProgramProxies(DEFAULT_INVOKED, DynamicAccountConfig::<Void>createFeePayerAccount)
+          .forEach(ProgramProxy::cpiProgram);
+    } catch (final RuntimeException tolerated) {
+    }
   }
 }

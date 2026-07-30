@@ -86,11 +86,14 @@ generated zero additional mutants (twice — latest 311 → 311), so the suite
 stays on plain `STRONGER` — re-trial if fluent/builder-style code is
 introduced.
 
-One fuzz target: `fuzzMappingConfig` (`MappingConfigFuzz`) drives
-`ProgramMapConfig.parseConfig` — the parser for external, downloaded config
-JSON — with its seed corpus under
-`ix-proxy/src/test/resources/fuzz/mappingConfig`, replayed inside `check` by
-the generated `MappingConfigFuzzSeedReplayTest`. Register new harnesses in
+Two fuzz targets, with seed corpora under `ix-proxy/src/test/resources/fuzz/`
+replayed inside `check` by generated `*FuzzSeedReplayTest`s:
+`fuzzMappingConfig` (`MappingConfigFuzz`) drives the full startup path for
+external, downloaded config JSON — `ProgramMapConfig.parseConfig` through
+`createProgramProxies`; `fuzzIxMapper` (`IxMapperFuzz`) carves arbitrary
+bytes into instructions and drives `lookupProxy`/`mapInstruction` — the path
+that faces user-submitted transactions — asserting length/payload/program
+properties on every successful mapping. Register new harnesses in
 the `hardening` block with `targetClass` AND `seedCorpus` (both required — a
 missing `seedCorpus` silently skips the replay test).
 
