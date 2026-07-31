@@ -63,6 +63,24 @@ public record ConfigLoader(Path configDirectory, Set<ConfigResource> remoteConfi
                                                   final boolean cacheFiles,
                                                   final Duration maxDelay,
                                                   final int maxRetries) {
+    return loadRemoteConfigs(executorService, numThreads, httpClient, cacheFiles, maxDelay, maxRetries, Thread::sleep);
+  }
+
+  /// Retry backoff pause, injectable so tests can drive the retry loop
+  /// without real waits.
+  @FunctionalInterface
+  interface Sleeper {
+
+    void sleep(final long millis) throws InterruptedException;
+  }
+
+  List<ProgramMapConfig> loadRemoteConfigs(final ExecutorService executorService,
+                                           final int numThreads,
+                                           final HttpClient httpClient,
+                                           final boolean cacheFiles,
+                                           final Duration maxDelay,
+                                           final int maxRetries,
+                                           final Sleeper sleeper) {
     if (remoteConfigs != null && !remoteConfigs.isEmpty()) {
       if (cacheFiles && configDirectory == null) {
         throw new IllegalStateException("configDirectory must not be null when cacheFiles is true.");
@@ -75,7 +93,7 @@ public record ConfigLoader(Path configDirectory, Set<ConfigResource> remoteConfi
       workQueue.addAll(remoteConfigs);
       final long maxDelayMillis = maxDelay.toMillis();
       final var futureResults = IntStream.range(0, numThreads)
-          .mapToObj(i -> new Worker(workQueue, httpClient, cacheFiles, configDirectory, maxDelayMillis, maxRetries, accountMetaCache, indexedAccountMetaCache))
+          .mapToObj(i -> new Worker(workQueue, httpClient, cacheFiles, configDirectory, maxDelayMillis, maxRetries, sleeper, accountMetaCache, indexedAccountMetaCache))
           .map(worker -> CompletableFuture.supplyAsync(worker, executorService))
           .toList();
 
@@ -89,14 +107,15 @@ public record ConfigLoader(Path configDirectory, Set<ConfigResource> remoteConfi
     }
   }
 
-  private record Worker(Queue<ConfigResource> workQueue,
-                        HttpClient httpClient,
-                        boolean cacheFiles,
-                        Path configDirectory,
-                        long maxDelayMillis,
-                        int maxRetries,
-                        Map<AccountMeta, AccountMeta> accountMetaCache,
-                        Map<IndexedAccountMeta, IndexedAccountMeta> indexedAccountMetaCache) implements Supplier<List<ProgramMapConfig>> {
+  record Worker(Queue<ConfigResource> workQueue,
+                HttpClient httpClient,
+                boolean cacheFiles,
+                Path configDirectory,
+                long maxDelayMillis,
+                int maxRetries,
+                Sleeper sleeper,
+                Map<AccountMeta, AccountMeta> accountMetaCache,
+                Map<IndexedAccountMeta, IndexedAccountMeta> indexedAccountMetaCache) implements Supplier<List<ProgramMapConfig>> {
 
 
     @Override
@@ -126,7 +145,7 @@ public record ConfigLoader(Path configDirectory, Set<ConfigResource> remoteConfi
                       """, errorCount, configResource, delayMillis
                   )
               );
-              Thread.sleep(delayMillis);
+              sleeper.sleep(delayMillis);
               continue;
             }
 

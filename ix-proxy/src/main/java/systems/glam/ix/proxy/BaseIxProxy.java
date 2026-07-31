@@ -33,6 +33,13 @@ abstract class BaseIxProxy<A> implements IxProxy<A> {
       ));
     }
 
+    if (instruction.len() < cpiDiscriminatorLength) {
+      throw new IllegalStateException(String.format(
+          "Expected at least %d bytes of instruction data, but was %d.",
+          cpiDiscriminatorLength, instruction.len()
+      ));
+    }
+
     final int cpiDataOffset = instruction.offset();
     final byte[] cpiData = instruction.data();
     if (!Arrays.equals(

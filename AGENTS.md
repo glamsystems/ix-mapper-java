@@ -79,9 +79,11 @@ The `ix-proxy` module registers the PIT suite `pitestIxProxy` via the
 `systems.glam.ix.proxy.*` by wildcard with test sources excluded, so a new
 class is mutated by default. The run diffs unkilled mutants against the
 accepted baseline in `ix-proxy/config/pitest/` and fails on anything new. The
-baseline was **seeded with the full pre-existing survivor population** — that
-is untriaged debt made explicit, not acceptance; `config/pitest/README.md`
-tracks the triage state. `EXPERIMENTAL_NAKED_RECEIVER` was trialed and
+baseline was seeded with the full pre-existing survivor population and has
+since been **worked down to fully-triaged equivalents** — every row carries a
+family label whose equivalence argument lives in `config/pitest/README.md`,
+which also tracks the debt history and the audited timeout set.
+`EXPERIMENTAL_NAKED_RECEIVER` was trialed and
 generated zero additional mutants (twice — latest 311 → 311), so the suite
 stays on plain `STRONGER` — re-trial if fluent/builder-style code is
 introduced.

@@ -5,6 +5,8 @@ import org.junit.jupiter.api.io.TempDir;
 import software.sava.core.accounts.PublicKey;
 import systems.comodal.jsoniter.JsonIterator;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.Authenticator;
 import java.net.CookieHandler;
 import java.net.ProxySelector;
@@ -17,8 +19,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
@@ -28,9 +35,9 @@ import javax.net.ssl.SSLSession;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/// [ConfigLoader] configuration parsing and the local-directory load path.
-/// The remote worker's HTTP/retry loop needs a scripted local server and is
-/// deliberately not covered here — see `config/pitest/README.md`.
+/// [ConfigLoader] configuration parsing, the local-directory load path, and
+/// the remote worker's fetch/retry loop — driven without sockets or real
+/// waits via [StubHttpClient] and the [ConfigLoader.Sleeper] seam.
 final class ConfigLoaderTests {
 
   private static PublicKey key(final int marker) {
@@ -141,23 +148,35 @@ final class ConfigLoaderTests {
         loader.loadRemoteConfigs(null, 1, null, true, java.time.Duration.ofSeconds(1), 1));
   }
 
-  /// Scripted [HttpClient]: serves each URI's canned bytes without a socket.
-  /// Nested in the test class so the mutation suite's `*Test*` exclusion
-  /// covers it.
+  /// Scripted [HttpClient]: serves each URI's canned bytes without a socket,
+  /// after throwing [IOException] for the first `failuresBeforeSuccess`
+  /// requests; a URI with no canned body always throws [IOException]. Nested
+  /// in the test class so the mutation suite's `*Test*` exclusion covers it.
   private static final class StubHttpClient extends HttpClient {
 
     private final Map<URI, byte[]> bodies;
+    private int remainingFailures;
 
     private StubHttpClient(final Map<URI, byte[]> bodies) {
+      this(bodies, 0);
+    }
+
+    private StubHttpClient(final Map<URI, byte[]> bodies, final int failuresBeforeSuccess) {
       this.bodies = bodies;
+      this.remainingFailures = failuresBeforeSuccess;
     }
 
     @Override
     @SuppressWarnings("unchecked")
-    public <T> HttpResponse<T> send(final HttpRequest request, final HttpResponse.BodyHandler<T> responseBodyHandler) {
+    public <T> HttpResponse<T> send(final HttpRequest request,
+                                    final HttpResponse.BodyHandler<T> responseBodyHandler) throws IOException {
+      if (remainingFailures > 0) {
+        --remainingFailures;
+        throw new IOException("Scripted failure for " + request.uri());
+      }
       final byte[] body = bodies.get(request.uri());
       if (body == null) {
-        throw new IllegalStateException("Unexpected request: " + request.uri());
+        throw new IOException("No canned body for " + request.uri());
       }
       return new HttpResponse<>() {
         @Override
@@ -298,6 +317,66 @@ final class ConfigLoaderTests {
       assertEquals(1, configs.size());
     }
     assertFalse(Files.exists(configDirectory.resolve("a.json")));
+  }
+
+  // ----- the Worker retry loop, run directly on the test thread -----
+
+  private static ConfigLoader.Worker worker(final Queue<ConfigLoader.ConfigResource> workQueue,
+                                            final HttpClient httpClient,
+                                            final int maxRetries,
+                                            final long maxDelayMillis,
+                                            final ConfigLoader.Sleeper sleeper) {
+    return new ConfigLoader.Worker(
+        workQueue, httpClient, false, null, maxDelayMillis, maxRetries, sleeper, new HashMap<>(), new HashMap<>());
+  }
+
+  @Test
+  void retriesBackOffOnTheOddSecondsScheduleCappedAtMaxDelay() throws Exception {
+    final var uri = URI.create("https://example.com/a.json");
+    final var httpClient = new StubHttpClient(
+        Map.of(uri, mappingConfig(key(75), 6).getBytes(StandardCharsets.UTF_8)), 2);
+    final var queue = new ArrayDeque<>(List.of(new ConfigLoader.ConfigResource(uri, "a.json")));
+    final var delays = new ArrayList<Long>();
+
+    final var results = worker(queue, httpClient, 2, 2_500, delays::add).get();
+
+    assertEquals(1, results.size());
+    assertEquals(key(75), results.getFirst().programs().iterator().next().publicKey());
+    // (2n - 1) seconds per attempt — 1s then 3s — with the second capped at 2.5s
+    assertEquals(List.of(1_000L, 2_500L), delays);
+  }
+
+  @Test
+  void exhaustedRetriesRethrowTheFetchFailure() {
+    final var uri = URI.create("https://example.com/a.json");
+    final var queue = new ArrayDeque<>(List.of(new ConfigLoader.ConfigResource(uri, "a.json")));
+    final var delays = new ArrayList<Long>();
+
+    final var exhausted = worker(queue, new StubHttpClient(Map.of()), 2, 10_000, delays::add);
+    assertThrows(UncheckedIOException.class, exhausted::get);
+    // maxRetries sleeps happen; the failure after the last retry rethrows
+    assertEquals(List.of(1_000L, 3_000L), delays);
+  }
+
+  @Test
+  void interruptionDuringBackoffKeepsPartialResultsAndTheInterruptFlag() throws Exception {
+    final var goodUri = URI.create("https://example.com/a.json");
+    final var badUri = URI.create("https://example.com/b.json");
+    final var httpClient = new StubHttpClient(
+        Map.of(goodUri, mappingConfig(key(76), 7).getBytes(StandardCharsets.UTF_8)));
+    final var queue = new ArrayDeque<>(List.of(
+        new ConfigLoader.ConfigResource(goodUri, "a.json"),
+        new ConfigLoader.ConfigResource(badUri, "b.json")));
+
+    final var results = worker(queue, httpClient, 5, 10_000, millis -> {
+      throw new InterruptedException();
+    }).get();
+
+    // interrupted() both asserts the worker restored the flag and clears it
+    // so it cannot leak into later tests
+    assertTrue(Thread.interrupted());
+    assertEquals(1, results.size());
+    assertEquals(key(76), results.getFirst().programs().iterator().next().publicKey());
   }
 
   @Test

@@ -54,22 +54,28 @@ refactored away, or moved below with a reason.
   socket. Baseline 284 → 22 rows: 12 accepted with reasons (below), 10
   `# untriaged`.
 
-### Remaining `# untriaged` debt — the Worker retry path
-
-`ConfigLoader$Worker.get` lines 119–129 and 149–150 (10 rows, all
-`NO_COVERAGE`): the IOException retry loop — backoff arithmetic,
-`Thread.sleep`, the retry log call — and the InterruptedException handler.
-The worker's happy path is covered by `ConfigLoaderTests` via
-`StubHttpClient`; the retry path calls `Thread.sleep` with a computed
-backoff, so covering it deterministically needs a clock/sleep seam (see
-ravina's `NanoClock` pattern) or acceptance of a real-wait test, which the
-determinism rules forbid. Take the seam route if this path ever needs
-hardening; until then it is recorded debt.
+- **Worked 2026-07-31**: the Worker retry path, previously the remaining
+  `# untriaged` debt (10 `NO_COVERAGE` rows), was covered by adding a
+  `ConfigLoader.Sleeper` seam (package-private; production passes
+  `Thread::sleep`) and driving `Worker` directly on the test thread with a
+  scripted flaky `StubHttpClient` — backoff schedule, cap, retry bound,
+  and the InterruptedException handler are all asserted without real waits.
+  A truncated-instruction-data guard was also added to
+  `BaseIxProxy.validateMapping` (previously an `ArrayIndexOutOfBoundsException`
+  escaped from `Arrays.equals`). Baseline 22 → 13 rows: the 12 accepted
+  equivalents carried over; the worker's retry log call is newly covered and
+  accepted as `# log-only` (below). No `# untriaged` rows remain.
 
 ## Timed-out mutants (audited set)
 
-None. Seed `ixProxy-timeouts.csv` with `-PinitTimeoutAudit` if a timeout
-ever appears, and write its structural cause here.
+`ConfigLoader$Worker.get` line 138, `MathMutator` and
+`RemoveConditionalMutator_ORDER_ELSE` (seeded 2026-07-31): both mutate the
+retry bound `++errorCount > maxRetries` — the increment into a decrement,
+the comparison into always-false — so the IOException retry loop never
+exits. The covering tests inject a non-blocking `Sleeper`, so the mutant
+spins the loop indefinitely instead of sleeping, and PIT can only detect it
+as a timeout. The cause is structural (an unbounded loop), not a slow test:
+any mutation that removes the loop's only exit lands here.
 
 ## Mutator-set trials
 
@@ -114,6 +120,12 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   constructor, so the two lengths agree by construction of every
   `Discriminator` implementation; the guard exists to catch a broken foreign
   `Discriminator` and cannot fire in-harness.
+- `# log-only` (1 row, `ConfigLoader$Worker.get` line 142): removing the
+  `System.Logger::log` call that announces a retry. The retry's observable
+  behaviour — the backoff delays, the bound, the eventual result or rethrow —
+  is fully asserted by `ConfigLoaderTests`; the log line is operator
+  diagnostics with no functional effect, and pinning it would mean asserting
+  on a logging backend, a test that restates the implementation.
 - `# empty-copy-equivalent` (2 rows, `IxProxyRecord.mapInstructionUnchecked`
   line 80): `len > 0` guards a payload `System.arraycopy`; at `len == 0`
   (instruction data is exactly the discriminator) the copy is a zero-length

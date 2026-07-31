@@ -167,6 +167,21 @@ final class IxMapConfigTests {
   }
 
   @Test
+  void truncatedInstructionDataIsRejectedWithAReadableError() {
+    final var proxy = parse("""
+        {"src_discriminator": [7, 8]}""").createProxy(INVOKED_PROXY, FACTORY);
+
+    // exactly discriminator-length data is the shortest valid instruction
+    final var exact = Instruction.createInstruction(CPI_PROGRAM, List.of(), new byte[]{7, 8});
+    assertSame(exact, proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, exact));
+
+    final var truncated = Instruction.createInstruction(CPI_PROGRAM, List.of(), new byte[]{7});
+    final var ex = assertThrows(IllegalStateException.class,
+        () -> proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, truncated));
+    assertEquals("Expected at least 2 bytes of instruction data, but was 1.", ex.getMessage());
+  }
+
+  @Test
   void matchesCpiDiscriminatorComparesThePrefixWithinBounds() {
     final var proxy = parse("""
         {"src_discriminator": [7, 8]}""").createProxy(INVOKED_PROXY, FACTORY);

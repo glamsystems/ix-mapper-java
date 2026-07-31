@@ -1,14 +1,5 @@
 systems.glam.ix.proxy.BaseIxProxy,validateMapping,29,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # invariant-guard
-systems.glam.ix.proxy.ConfigLoader$Worker,get,119,ConditionalsBoundaryMutator,NO_COVERAGE # untriaged
-systems.glam.ix.proxy.ConfigLoader$Worker,get,119,MathMutator,NO_COVERAGE # untriaged
-systems.glam.ix.proxy.ConfigLoader$Worker,get,119,RemoveConditionalMutator_ORDER_ELSE,NO_COVERAGE # untriaged
-systems.glam.ix.proxy.ConfigLoader$Worker,get,119,RemoveConditionalMutator_ORDER_IF,NO_COVERAGE # untriaged
-systems.glam.ix.proxy.ConfigLoader$Worker,get,122,MathMutator,NO_COVERAGE # untriaged
-systems.glam.ix.proxy.ConfigLoader$Worker,get,122,MathMutator,NO_COVERAGE # untriaged
-systems.glam.ix.proxy.ConfigLoader$Worker,get,123,VoidMethodCallMutator,NO_COVERAGE # untriaged
-systems.glam.ix.proxy.ConfigLoader$Worker,get,129,VoidMethodCallMutator,NO_COVERAGE # untriaged
-systems.glam.ix.proxy.ConfigLoader$Worker,get,149,VoidMethodCallMutator,NO_COVERAGE # untriaged
-systems.glam.ix.proxy.ConfigLoader$Worker,get,150,EmptyObjectReturnValsMutator,NO_COVERAGE # untriaged
+systems.glam.ix.proxy.ConfigLoader$Worker,get,142,VoidMethodCallMutator,SURVIVED # log-only
 systems.glam.ix.proxy.IxMapConfig,createProxy,58,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # single-variant-guard
 systems.glam.ix.proxy.IxMapConfig,createProxy,58,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # single-variant-guard
 systems.glam.ix.proxy.IxProxyRecord,mapInstructionUnchecked,80,ConditionalsBoundaryMutator,SURVIVED # empty-copy-equivalent
