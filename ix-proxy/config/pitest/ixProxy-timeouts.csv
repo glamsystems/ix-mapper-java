@@ -2,5 +2,5 @@
 # bullet): one line-less 'class,method,mutator' member per row. A timeout detects
 # slowness, not wrongness, so the ratchet cannot see a weakened covering assertion
 # behind one; each member's structural cause belongs in config/pitest/README.md.
-systems.glam.ix.proxy.ConfigLoader$Worker,get,MathMutator # line 138
-systems.glam.ix.proxy.ConfigLoader$Worker,get,RemoveConditionalMutator_ORDER_ELSE # line 138
+systems.glam.ix.proxy.ConfigLoader$Worker,get,MathMutator # cause:liveness line 138
+systems.glam.ix.proxy.ConfigLoader$Worker,get,RemoveConditionalMutator_ORDER_ELSE # cause:liveness line 138

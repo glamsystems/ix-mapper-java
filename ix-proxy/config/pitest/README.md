@@ -1,33 +1,17 @@
-# Mutation-testing baseline & triage policy
+# Mutation-testing triage record
 
-Each `pitest<Suite>` run is finalized by `pitest<Suite>Verify`, which diffs the
-run's unkilled mutants (`SURVIVED` and `NO_COVERAGE`) against the accepted
-baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline row
-format: `class,method,line,mutator,status`. Full policy — the three legal
-outcomes for a new survivor, determinism requirements, targeting rules —
-lives in sava-build's `HARDENING.md`.
+The `ixProxy` accepted baseline contains 13 fully triaged `SURVIVED` rows and
+no `NO_COVERAGE` or `# untriaged` debt. Its labels map to the equivalence
+arguments below; the timeout audit has two separately documented liveness
+members. The installed sava-build version's `hardeningHelp`, generated agent
+template, and `HARDENING.md` are authoritative for task and record semantics.
+Use its named writer tasks for record changes; never hand-edit record structure
+or provenance stamps.
 
-Never refresh with `-PupdateMutationBaseline` just to make the build pass:
-kill the mutant, refactor it out of existence, or record its equivalence
-reason below. Pure line drift (every new row a same-status shift of a
-stale one, populations unchanged) passes on its own with a notice —
-refresh at a convenient moment. Anything else fails with a per-row
-classification (`shifted` vs `newly covered` vs unexplained) and a churn
-tally: a newly covered row is triage, not churn, and identical rows are
-sibling mutants of one compound condition — the comparison is a
-multiset, so never hand-dedupe the CSV.
+## Triage history
 
-A baseline row may carry a trailing `# note` — `# untriaged` is the
-conventional label for seeded debt. Notes are preserved across
-`-PupdateMutationBaseline` / `-PunionMutationBaseline` rewrites, and the
-verify task counts rows marked `# untriaged` so the debt stays a printed
-number, not prose.
-
-## Untriaged debt
-
-A first baseline seeded from the pre-existing survivor population is triage
-debt made explicit, not acceptance. List it here until each key is killed,
-refactored away, or moved below with a reason.
+The baseline was seeded from pre-existing debt and then worked down. These
+entries preserve the measurements and commands used at the time.
 
 - **Seeded 2026-07-29** (`pitestIxProxy -PupdateMutationBaseline`): 328 rows —
   148 `SURVIVED`, 180 `NO_COVERAGE` — against 27 killed of 355 generated.
@@ -65,6 +49,12 @@ refactored away, or moved below with a reason.
   escaped from `Arrays.equals`). Baseline 22 → 13 rows: the 12 accepted
   equivalents carried over; the worker's retry log call is newly covered and
   accepted as `# log-only` (below). No `# untriaged` rows remain.
+- **Adopted sava-build 21.5.28 on 2026-08-26**: a fresh history-free run
+  reproduced 315 mutants, 302 detected, 13 labeled survivors, two audited
+  liveness timeouts, and no `NO_COVERAGE`. `pitestIxProxyBaselineRebase`
+  retained all accepted rows and bound them to PIT 1.25.9 and its toolchain;
+  `migrateMutationBaselines` then moved the record to schema 1, preserving the
+  13-row multiset and its labels while making source lines metadata.
 
 ## Timed-out mutants (audited set)
 
@@ -74,8 +64,9 @@ retry bound `++errorCount > maxRetries` — the increment into a decrement,
 the comparison into always-false — so the IOException retry loop never
 exits. The covering tests inject a non-blocking `Sleeper`, so the mutant
 spins the loop indefinitely instead of sleeping, and PIT can only detect it
-as a timeout. The cause is structural (an unbounded loop), not a slow test:
-any mutation that removes the loop's only exit lands here.
+as a timeout. Both audit rows are classified `cause:liveness`: the cause is
+structural (an unbounded loop), not a slow test, and any mutation that removes
+the loop's only exit lands here.
 
 ## Mutator-set trials
 
