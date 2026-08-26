@@ -21,6 +21,13 @@ final class GlamIxTests {
 
   private static final PublicKey INVOKED_PROGRAM = PublicKey.fromBase58Encoded("GLAMbTqav9N9witRjswJ8enwp9vv5G8bsSJ2kPJ4rcyc");
 
+  /// The mappings root the suite reads: the downloaded `../glam` clone by default, or the
+  /// directory named by the `glam.mappings.dir` system property (wired from the
+  /// `glamMappingsDir` Gradle property) so regenerated configs face the same validation.
+  static Path mappingsRoot() {
+    return Path.of(System.getProperty("glam.mappings.dir", "../glam"));
+  }
+
   record GlamVaultAccounts(AccountMeta readGlamState,
                            AccountMeta writeGlamState,
                            AccountMeta readGlamVault,
@@ -90,7 +97,7 @@ final class GlamIxTests {
   };
 
   private static final TransactionMapper<GlamVaultAccounts> txMapper = createMapper(
-      Path.of("../glam/mapping-configs-v1"),
+      mappingsRoot().resolve("mapping-configs-v1"),
       AccountMeta.createInvoked(GlamIxTests.INVOKED_PROGRAM),
       new HashMap<>(),
       DYNAMIC_ACCOUNT_FACTORY

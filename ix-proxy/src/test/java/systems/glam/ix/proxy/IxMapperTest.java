@@ -101,8 +101,8 @@ final class IxMapperTest {
     }
   }
 
-  private static final TransactionMapper<GlamAccounts> PROD_MAPPER = buildMapper(Path.of("../glam/mapping-configs-v1"));
-  private static final TransactionMapper<GlamAccounts> STAGING_MAPPER = buildMapper(Path.of("../glam/mapping-configs-v1-staging"));
+  private static final TransactionMapper<GlamAccounts> PROD_MAPPER = buildMapper(GlamIxTests.mappingsRoot().resolve("mapping-configs-v1"));
+  private static final TransactionMapper<GlamAccounts> STAGING_MAPPER = buildMapper(GlamIxTests.mappingsRoot().resolve("mapping-configs-v1-staging"));
 
   private static Instruction mapToGlamIx(final Instruction ix,
                                          final PublicKey glamState,

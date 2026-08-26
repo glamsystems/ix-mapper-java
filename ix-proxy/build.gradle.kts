@@ -11,16 +11,22 @@ testModuleInfo {
 // glam/ download, so a fresh clone (CI runs plain './gradlew check' via the
 // sava-build reusable workflows) must fetch it before tests run. Once the
 // directory exists this is a no-op; use ./syncMappings.sh to pull updates.
+// -PglamMappingsDir=<absolute path> instead points the whole suite at another
+// mappings root holding the same mapping-configs-v1/ and
+// mapping-configs-v1-staging/ layout — the seam that lets regenerated configs
+// face this validation before they are published upstream.
 val downloadMappings by tasks.registering(Exec::class) {
   description = "Clones the ix-mapper-ts mapping configs into the untracked glam/ directory."
   val glamDir = rootDir.resolve("glam")
+  val mappingsOverride = providers.gradleProperty("glamMappingsDir")
   workingDir = rootDir
   commandLine("./downloadMappings.sh")
-  onlyIf { !glamDir.isDirectory }
+  onlyIf { !mappingsOverride.isPresent && !glamDir.isDirectory }
 }
 
 tasks.withType<Test>().configureEach {
   dependsOn(downloadMappings)
+  providers.gradleProperty("glamMappingsDir").orNull?.let { systemProperty("glam.mappings.dir", it) }
 }
 
 hardening {
