@@ -99,6 +99,12 @@ properties on every successful mapping. Register new harnesses in
 the `hardening` block with `targetClass` AND `seedCorpus` (both required — a
 missing `seedCorpus` silently skips the replay test).
 
+Full fuzz campaigns are deliberately local-only. There is no GitHub Actions
+fuzz workflow because its CI runner cost is not justified for this library;
+run `:ix-proxy:fuzzAll` locally with explicit `-PmaxFuzzTime` and
+`-PmaxParallelFuzzTargets` budgets. CI still replays every committed seed
+corpus inside `check`.
+
 The full policy is sava-build's `HARDENING.md`; the process contract for
 changes here:
 
