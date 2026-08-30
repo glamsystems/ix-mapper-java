@@ -14,11 +14,34 @@ public interface IxProxy<A> {
                                     final List<DynamicAccount<A>> dynamicAccounts,
                                     final List<IndexedAccountMeta> staticAccounts,
                                     final int[] indexes) {
+    return createProxy(
+        invokedProxyProgram,
+        cpiDiscriminator, proxyDiscriminator,
+        dynamicAccounts, staticAccounts,
+        indexes, new int[0]
+    );
+  }
+
+  /// `programIdPlaceholderIndices` marks the source-account slots that may carry the source
+  /// program id as an Anchor optional-account `None` sentinel; when they do, the mapped
+  /// account is rewritten to the proxy program id (flags preserved) so the proxy's own
+  /// optional resolution reads `None`.
+  static <A> IxProxy<A> createProxy(final AccountMeta invokedProxyProgram,
+                                    final Discriminator cpiDiscriminator,
+                                    final Discriminator proxyDiscriminator,
+                                    final List<DynamicAccount<A>> dynamicAccounts,
+                                    final List<IndexedAccountMeta> staticAccounts,
+                                    final int[] indexes,
+                                    final int[] programIdPlaceholderIndices) {
     int numRemoved = 0;
     for (final int index : indexes) {
       if (index < 0) {
         ++numRemoved;
       }
+    }
+    final boolean[] placeholderSlots = new boolean[indexes.length];
+    for (final int index : programIdPlaceholderIndices) {
+      placeholderSlots[index] = true;
     }
     return new IxProxyRecord<>(
         invokedProxyProgram,
@@ -27,6 +50,7 @@ public interface IxProxy<A> {
         dynamicAccounts,
         staticAccounts,
         indexes,
+        placeholderSlots,
         dynamicAccounts.size() + staticAccounts.size() + (indexes.length - numRemoved)
     );
   }

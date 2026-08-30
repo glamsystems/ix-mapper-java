@@ -682,4 +682,187 @@ final class IxMapperTest {
     final var stagingAuthority = getIntegrationAuthority(GLAM_STAGING_PROGRAM_ID);
     assertNotEquals(authority, stagingAuthority);
   }
+
+  // ===== Optional account placeholder replacement =====
+
+  private static final byte[] KAMINO_DEPOSIT_V2_DISCRIMINATOR = {
+      (byte) 216, (byte) 224, (byte) 191, 27, (byte) 204, (byte) 151, 102, (byte) 175
+  };
+  private static final byte[] KAMINO_BORROW_V2_DISCRIMINATOR = {
+      (byte) 161, (byte) 128, (byte) 143, (byte) 245, (byte) 171, (byte) 199, (byte) 194, 6
+  };
+
+  private static int uniqueKeyMarker = 0;
+
+  private static PublicKey uniqueKey() {
+    final byte[] bytes = new byte[PublicKey.PUBLIC_KEY_LENGTH];
+    final int marker = ++uniqueKeyMarker;
+    bytes[30] = (byte) (marker >> 8);
+    bytes[31] = (byte) marker;
+    return PublicKey.createPubKey(bytes);
+  }
+
+  private static void expectProgramIdCount(final Instruction ix, final PublicKey programId, final int count) {
+    assertEquals(count, (int) ix.accounts().stream().filter(meta -> programId.equals(meta.publicKey())).count());
+  }
+
+  private static byte[] withAmount(final byte[] discriminator, final long amount) {
+    final byte[] data = new byte[16];
+    System.arraycopy(discriminator, 0, data, 0, 8);
+    System.arraycopy(le64(amount), 0, data, 8, 8);
+    return data;
+  }
+
+  /// A fake Kamino deposit_v2 instruction with 17 accounts; the three optional slots
+  /// ([10] placeholder_user_destination_collateral, [14] obligation_farm_user_state,
+  /// [15] reserve_farm_state) default to the Kamino program id — the Anchor None sentinel.
+  private static Instruction buildKaminoDepositV2Ix(final PublicKey placeholderUserDestCollateral,
+                                                    final PublicKey obligationFarmUserState,
+                                                    final PublicKey reserveFarmState) {
+    return Instruction.createInstruction(
+        KAMINO_LEND_PROGRAM_ID,
+        List.of(
+            key(uniqueKey(), true, true), // [0] owner
+            key(uniqueKey(), false, true), // [1] obligation
+            key(uniqueKey(), false, false), // [2] lending_market
+            key(uniqueKey(), false, false), // [3] lending_market_authority
+            key(uniqueKey(), false, true), // [4] reserve
+            key(uniqueKey(), false, false), // [5] reserve_liquidity_mint
+            key(uniqueKey(), false, true), // [6] reserve_liquidity_supply
+            key(uniqueKey(), false, true), // [7] reserve_collateral_mint
+            key(uniqueKey(), false, true), // [8] reserve_destination_deposit_collateral
+            key(uniqueKey(), false, true), // [9] user_source_liquidity
+            key(placeholderUserDestCollateral, false, false), // [10] optional
+            key(uniqueKey(), false, false), // [11] collateral_token_program
+            key(uniqueKey(), false, false), // [12] liquidity_token_program
+            key(uniqueKey(), false, false), // [13] instruction_sysvar_account
+            key(obligationFarmUserState, false, true), // [14] optional
+            key(reserveFarmState, false, true), // [15] optional
+            key(uniqueKey(), false, false) // [16] farms_program
+        ),
+        withAmount(KAMINO_DEPOSIT_V2_DISCRIMINATOR, 1_000_000L)
+    );
+  }
+
+  /// A fake Kamino borrow_v2 instruction with 15 accounts; optionals at
+  /// [9] referrer_token_state, [12] obligation_farm_user_state, [13] reserve_farm_state.
+  private static Instruction buildKaminoBorrowV2Ix(final PublicKey referrerTokenState,
+                                                   final PublicKey obligationFarmUserState,
+                                                   final PublicKey reserveFarmState) {
+    return Instruction.createInstruction(
+        KAMINO_LEND_PROGRAM_ID,
+        List.of(
+            key(uniqueKey(), true, true), // [0] owner
+            key(uniqueKey(), false, true), // [1] obligation
+            key(uniqueKey(), false, false), // [2] lending_market
+            key(uniqueKey(), false, false), // [3] lending_market_authority
+            key(uniqueKey(), false, true), // [4] borrow_reserve
+            key(uniqueKey(), false, false), // [5] reserve_liquidity_mint
+            key(uniqueKey(), false, true), // [6] reserve_source_liquidity
+            key(uniqueKey(), false, true), // [7] borrow_reserve_liquidity_fee_receiver
+            key(uniqueKey(), false, true), // [8] user_destination_liquidity
+            key(referrerTokenState, false, true), // [9] optional
+            key(uniqueKey(), false, false), // [10] liquidity_token_program
+            key(uniqueKey(), false, false), // [11] instruction_sysvar_account
+            key(obligationFarmUserState, false, true), // [12] optional
+            key(reserveFarmState, false, true), // [13] optional
+            key(uniqueKey(), false, false) // [14] farms_program
+        ),
+        withAmount(KAMINO_BORROW_V2_DISCRIMINATOR, 500_000L)
+    );
+  }
+
+  @Test
+  void shouldReplaceKaminoProgramIdPlaceholdersInDepositV2() {
+    final var ix = buildKaminoDepositV2Ix(KAMINO_LEND_PROGRAM_ID, KAMINO_LEND_PROGRAM_ID, KAMINO_LEND_PROGRAM_ID);
+    final var result = mapToGlamIx(ix, glamState, glamSigner);
+
+    assertNotNull(result);
+    assertEquals(EXT_KAMINO_PROGRAM_ID, result.programId().publicKey());
+    assertEquals(23, result.accounts().size());
+    expectAccountMeta(result.accounts().get(16), EXT_KAMINO_PROGRAM_ID, false, false);
+    expectAccountMeta(result.accounts().get(20), EXT_KAMINO_PROGRAM_ID, false, true);
+    expectAccountMeta(result.accounts().get(21), EXT_KAMINO_PROGRAM_ID, false, true);
+    expectAccountMeta(result.accounts().get(4), KAMINO_LEND_PROGRAM_ID, false, false);
+    expectProgramIdCount(result, EXT_KAMINO_PROGRAM_ID, 3);
+    expectProgramIdCount(result, KAMINO_LEND_PROGRAM_ID, 1);
+  }
+
+  @Test
+  void shouldReplaceKaminoProgramIdPlaceholdersInBorrowV2() {
+    final var ix = buildKaminoBorrowV2Ix(KAMINO_LEND_PROGRAM_ID, KAMINO_LEND_PROGRAM_ID, KAMINO_LEND_PROGRAM_ID);
+    final var result = mapToGlamIx(ix, glamState, glamSigner);
+
+    assertNotNull(result);
+    assertEquals(EXT_KAMINO_PROGRAM_ID, result.programId().publicKey());
+    assertEquals(21, result.accounts().size());
+    expectAccountMeta(result.accounts().get(15), EXT_KAMINO_PROGRAM_ID, false, true);
+    expectAccountMeta(result.accounts().get(18), EXT_KAMINO_PROGRAM_ID, false, true);
+    expectAccountMeta(result.accounts().get(19), EXT_KAMINO_PROGRAM_ID, false, true);
+    expectAccountMeta(result.accounts().get(4), KAMINO_LEND_PROGRAM_ID, false, false);
+    expectProgramIdCount(result, EXT_KAMINO_PROGRAM_ID, 3);
+    expectProgramIdCount(result, KAMINO_LEND_PROGRAM_ID, 1);
+  }
+
+  @Test
+  void shouldNotReplaceRealAccountsInPlaceholderSlots() {
+    final var realPlaceholder = uniqueKey();
+    final var realFarmAccount = uniqueKey();
+    final var realReserveFarm = uniqueKey();
+
+    final var ix = buildKaminoDepositV2Ix(realPlaceholder, realFarmAccount, realReserveFarm);
+    final var result = mapToGlamIx(ix, glamState, glamSigner);
+
+    assertNotNull(result);
+    expectAccountMeta(result.accounts().get(16), realPlaceholder, false, false);
+    expectAccountMeta(result.accounts().get(20), realFarmAccount, false, true);
+    expectAccountMeta(result.accounts().get(21), realReserveFarm, false, true);
+    expectProgramIdCount(result, EXT_KAMINO_PROGRAM_ID, 0);
+  }
+
+  @Test
+  void shouldHandleMixedRealAndPlaceholderOptionalAccounts() {
+    final var realFarmAccount = uniqueKey();
+
+    final var ix = buildKaminoDepositV2Ix(KAMINO_LEND_PROGRAM_ID, realFarmAccount, KAMINO_LEND_PROGRAM_ID);
+    final var result = mapToGlamIx(ix, glamState, glamSigner);
+
+    assertNotNull(result);
+    expectAccountMeta(result.accounts().get(16), EXT_KAMINO_PROGRAM_ID, false, false);
+    expectAccountMeta(result.accounts().get(20), realFarmAccount, false, true);
+    expectAccountMeta(result.accounts().get(21), EXT_KAMINO_PROGRAM_ID, false, true);
+    expectProgramIdCount(result, EXT_KAMINO_PROGRAM_ID, 2);
+  }
+
+  @Test
+  void shouldNotRewriteProgramIdsOutsideConfiguredPlaceholderIndices() {
+    final var realPlaceholder = uniqueKey();
+    final var ix = buildKaminoDepositV2Ix(realPlaceholder, uniqueKey(), uniqueKey());
+    // the sentinel key in a NON-placeholder slot: [1] obligation
+    final var accounts = new ArrayList<>(ix.accounts());
+    accounts.set(1, key(KAMINO_LEND_PROGRAM_ID, false, true));
+    final var tampered = Instruction.createInstruction(KAMINO_LEND_PROGRAM_ID, accounts, withAmount(KAMINO_DEPOSIT_V2_DISCRIMINATOR, 1_000_000L));
+
+    final var result = mapToGlamIx(tampered, glamState, glamSigner);
+
+    assertNotNull(result);
+    expectAccountMeta(result.accounts().get(7), KAMINO_LEND_PROGRAM_ID, false, true);
+    expectAccountMeta(result.accounts().get(16), realPlaceholder, false, false);
+    expectProgramIdCount(result, EXT_KAMINO_PROGRAM_ID, 0);
+    expectProgramIdCount(result, KAMINO_LEND_PROGRAM_ID, 2);
+  }
+
+  @Test
+  void placeholderReplacementUsesTheStagingProxyIdUnderTheStagingMapper() {
+    final var ix = buildKaminoDepositV2Ix(KAMINO_LEND_PROGRAM_ID, KAMINO_LEND_PROGRAM_ID, KAMINO_LEND_PROGRAM_ID);
+    final var result = mapToGlamIx(ix, glamState, glamSigner, true);
+
+    assertNotNull(result);
+    assertEquals(STAGING_EXT_KAMINO_PROGRAM_ID, result.programId().publicKey());
+    expectAccountMeta(result.accounts().get(16), STAGING_EXT_KAMINO_PROGRAM_ID, false, false);
+    expectAccountMeta(result.accounts().get(20), STAGING_EXT_KAMINO_PROGRAM_ID, false, true);
+    expectAccountMeta(result.accounts().get(21), STAGING_EXT_KAMINO_PROGRAM_ID, false, true);
+    expectProgramIdCount(result, STAGING_EXT_KAMINO_PROGRAM_ID, 3);
+    expectProgramIdCount(result, KAMINO_LEND_PROGRAM_ID, 1);
+  }
 }

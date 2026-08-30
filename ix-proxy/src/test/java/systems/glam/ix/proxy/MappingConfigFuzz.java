@@ -59,6 +59,7 @@ public final class MappingConfigFuzz {
       ix.proxyDiscriminator();
       ix.dynamicAccounts();
       ix.staticAccounts();
+      ix.programIdPlaceholderIndices();
     });
     try {
       // a config that parses but describes an invalid mapping shape must also

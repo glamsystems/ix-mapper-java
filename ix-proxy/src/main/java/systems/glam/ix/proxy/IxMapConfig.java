@@ -12,6 +12,11 @@ import java.util.function.Function;
 
 import static systems.comodal.jsoniter.JsonIterator.fieldEqualsIgnoreCase;
 
+/// `programIdPlaceholderIndices` names the source-account slots whose account may carry the
+/// source program id as an Anchor optional-account `None` sentinel; the mapper rewrites the
+/// sentinel to the proxy program id so the proxy's own optional resolution reads `None`
+/// (its handler re-synthesizes the source sentinel for the CPI). Flags are preserved and a
+/// real account in the slot passes through untouched.
 public record IxMapConfig(ProxyType proxyType,
                           String cpiIxName,
                           Discriminator cpiDiscriminator,
@@ -19,7 +24,8 @@ public record IxMapConfig(ProxyType proxyType,
                           Discriminator proxyDiscriminator,
                           List<DynamicAccountConfig> dynamicAccounts,
                           List<IndexedAccountMeta> staticAccounts,
-                          int[] indexMap) {
+                          int[] indexMap,
+                          int[] programIdPlaceholderIndices) {
 
   private enum ProxyType {
     PAYER
@@ -36,6 +42,9 @@ public record IxMapConfig(ProxyType proxyType,
     if (proxyDiscriminator == null) {
       if (!staticAccounts.isEmpty()) {
         throw new IllegalStateException("Static accounts are not supported for IxMapConfig without a proxy discriminator.");
+      }
+      if (programIdPlaceholderIndices.length != 0) {
+        throw new IllegalStateException("Program id placeholder indices are not supported for IxMapConfig without a proxy discriminator.");
       }
       final int numDynamicAccounts = dynamicAccounts.size();
       if (numDynamicAccounts == 0) {
@@ -98,13 +107,37 @@ public record IxMapConfig(ProxyType proxyType,
           }
         }
       }
+      final boolean[] placeholderSlots = new boolean[indexMap.length];
+      for (final var index : programIdPlaceholderIndices) {
+        if (index < 0 || index >= indexMap.length) {
+          throw new IllegalStateException(String.format(
+              "Program id placeholder index %d is outside the index map. CPI IX: %s, Proxy IX: %s",
+              index, cpiIxName, proxyIxName
+          ));
+        }
+        if (indexMap[index] < 0) {
+          throw new IllegalStateException(String.format(
+              "Program id placeholder index %d maps to a dropped account. CPI IX: %s, Proxy IX: %s",
+              index, cpiIxName, proxyIxName
+          ));
+        }
+        if (placeholderSlots[index]) {
+          throw new IllegalStateException(String.format(
+              "Duplicate program id placeholder index %d. CPI IX: %s, Proxy IX: %s",
+              index, cpiIxName, proxyIxName
+          ));
+        } else {
+          placeholderSlots[index] = true;
+        }
+      }
       return IxProxy.createProxy(
           invokedProxyProgram,
           cpiDiscriminator,
           proxyDiscriminator,
           dynamicAccounts.stream().map(accountMetaFactory).toList(),
           staticAccounts,
-          indexMap
+          indexMap,
+          programIdPlaceholderIndices
       );
     }
   }
@@ -147,7 +180,7 @@ public record IxMapConfig(ProxyType proxyType,
         parser.staticAccounts = staticAccounts.isEmpty() ? Parser.NO_STATIC_ACCOUNTS : List.copyOf(staticAccounts);
       }
       case 7 -> parser.indexMap = ji.readIntArray();
-      case 8 -> ji.skip(); // program_id_placeholder_indices: consumed by ix-mapper-ts, unused here
+      case 8 -> parser.programIdPlaceholderIndices = ji.readIntArray();
       default -> throw new IllegalStateException("Unknown IxMapConfig field at " + ji.currentBuffer());
     }
     return true;
@@ -157,7 +190,7 @@ public record IxMapConfig(ProxyType proxyType,
 
     private static final List<DynamicAccountConfig> NO_DYNAMIC_ACCOUNTS = List.of();
     private static final List<IndexedAccountMeta> NO_STATIC_ACCOUNTS = List.of();
-    private static final int[] NO_INDEX_MAP = new int[0];
+    private static final int[] NO_INDEXES = new int[0];
 
     private final Map<AccountMeta, AccountMeta> accountMetaCache;
     private final Map<IndexedAccountMeta, IndexedAccountMeta> indexedAccountMetaCache;
@@ -170,6 +203,7 @@ public record IxMapConfig(ProxyType proxyType,
     private List<DynamicAccountConfig> dynamicAccounts;
     private List<IndexedAccountMeta> staticAccounts;
     private int[] indexMap;
+    private int[] programIdPlaceholderIndices;
 
     private Parser(final Map<AccountMeta, AccountMeta> accountMetaCache,
                    final Map<IndexedAccountMeta, IndexedAccountMeta> indexedAccountMetaCache) {
@@ -186,7 +220,8 @@ public record IxMapConfig(ProxyType proxyType,
           proxyDiscriminator,
           dynamicAccounts == null ? NO_DYNAMIC_ACCOUNTS : dynamicAccounts,
           staticAccounts == null ? NO_STATIC_ACCOUNTS : staticAccounts,
-          indexMap == null ? NO_INDEX_MAP : indexMap
+          indexMap == null ? NO_INDEXES : indexMap,
+          programIdPlaceholderIndices == null ? NO_INDEXES : programIdPlaceholderIndices
       );
     }
   }

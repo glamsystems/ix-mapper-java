@@ -1,10 +1,10 @@
 !sava-hardening-baseline-schema,1
 systems.glam.ix.proxy.BaseIxProxy,validateMapping,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # invariant-guard # line 29
 systems.glam.ix.proxy.ConfigLoader$Worker,get,VoidMethodCallMutator,SURVIVED # log-only # line 142
-systems.glam.ix.proxy.IxMapConfig,createProxy,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # single-variant-guard # line 58
-systems.glam.ix.proxy.IxMapConfig,createProxy,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # single-variant-guard # line 58
-systems.glam.ix.proxy.IxProxyRecord,mapInstructionUnchecked,ConditionalsBoundaryMutator,SURVIVED # empty-copy-equivalent # line 80
-systems.glam.ix.proxy.IxProxyRecord,mapInstructionUnchecked,RemoveConditionalMutator_ORDER_IF,SURVIVED # empty-copy-equivalent # line 80
+systems.glam.ix.proxy.IxMapConfig,createProxy,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # single-variant-guard # line 67
+systems.glam.ix.proxy.IxMapConfig,createProxy,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # single-variant-guard # line 67
+systems.glam.ix.proxy.IxProxyRecord,mapInstructionUnchecked,ConditionalsBoundaryMutator,SURVIVED # empty-copy-equivalent # line 90
+systems.glam.ix.proxy.IxProxyRecord,mapInstructionUnchecked,RemoveConditionalMutator_ORDER_IF,SURVIVED # empty-copy-equivalent # line 90
 systems.glam.ix.proxy.ProgramProxyMap,mapTransaction,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # defensive-null-tables # line 60
 systems.glam.ix.proxy.ProgramProxyMap,mapTransaction,RemoveConditionalMutator_EQUAL_IF,SURVIVED # defensive-null-tables # line 60
 systems.glam.ix.proxy.ProgramProxyMap,mapTransactionWithTable,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # defensive-null-tables # line 89

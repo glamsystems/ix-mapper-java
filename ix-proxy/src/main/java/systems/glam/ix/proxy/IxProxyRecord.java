@@ -14,6 +14,7 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
   final List<DynamicAccount<A>> dynamicAccounts;
   final List<IndexedAccountMeta> staticAccounts;
   final int[] indexes;
+  private final boolean[] placeholderSlots;
   private final int numAccounts;
   private final int lengthDelta;
 
@@ -23,6 +24,7 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
                 final List<DynamicAccount<A>> dynamicAccounts,
                 final List<IndexedAccountMeta> staticAccounts,
                 final int[] indexes,
+                final boolean[] placeholderSlots,
                 final int numAccounts) {
     super(cpiDiscriminator);
     this.invokedProxyProgram = invokedProxyProgram;
@@ -30,6 +32,7 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
     this.dynamicAccounts = dynamicAccounts;
     this.staticAccounts = staticAccounts;
     this.indexes = indexes;
+    this.placeholderSlots = placeholderSlots;
     this.numAccounts = numAccounts;
     this.lengthDelta = proxyDiscriminator.length() - cpiDiscriminator.length();
   }
@@ -57,11 +60,18 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
       staticAccount.setAccount(mappedAccounts);
     }
 
+    // An optional-account None arrives as the source program id in the slot; the proxy's
+    // Anchor layer reads None only as its own id, so configured slots swap the sentinel for
+    // the proxy program, flags preserved. A real account in the slot passes through.
+    final var srcProgramId = instruction.programId().publicKey();
     int s = 0, m;
     for (; s < indexes.length; ++s) {
       m = indexes[s];
       if (m >= 0) {
-        mappedAccounts[m] = accounts.get(s);
+        final var account = accounts.get(s);
+        mappedAccounts[m] = placeholderSlots[s] && srcProgramId.equals(account.publicKey())
+            ? AccountMeta.createMeta(invokedProxyProgram.publicKey(), account.write(), account.signer())
+            : account;
       }
     }
 

@@ -3,6 +3,7 @@ package systems.glam.ix.proxy;
 import org.junit.jupiter.api.Test;
 import software.sava.core.accounts.PublicKey;
 import software.sava.core.accounts.meta.AccountMeta;
+import software.sava.core.programs.Discriminator;
 import software.sava.core.tx.Instruction;
 import systems.comodal.jsoniter.JsonIterator;
 
@@ -70,6 +71,7 @@ final class IxMapConfigTests {
     assertEquals(1, staticAccount.index());
 
     assertArrayEquals(new int[]{2, -1}, config.indexMap());
+    assertArrayEquals(new int[]{0}, config.programIdPlaceholderIndices());
   }
 
   @Test
@@ -83,15 +85,17 @@ final class IxMapConfigTests {
     assertTrue(config.dynamicAccounts().isEmpty());
     assertTrue(config.staticAccounts().isEmpty());
     assertEquals(0, config.indexMap().length);
+    assertEquals(0, config.programIdPlaceholderIndices().length);
   }
 
   @Test
   void emptyArraysParseToEmpty() {
     final var config = parse("""
-        {"src_discriminator": [7], "dynamic_accounts": [], "static_accounts": [], "index_map": []}""");
+        {"src_discriminator": [7], "dynamic_accounts": [], "static_accounts": [], "index_map": [], "program_id_placeholder_indices": []}""");
     assertTrue(config.dynamicAccounts().isEmpty());
     assertTrue(config.staticAccounts().isEmpty());
     assertEquals(0, config.indexMap().length);
+    assertEquals(0, config.programIdPlaceholderIndices().length);
   }
 
   @Test
@@ -313,6 +317,104 @@ final class IxMapConfigTests {
         {"src_discriminator": [7], "dst_discriminator": [9], "index_map": [0, 0]}""");
     final var ex = assertThrows(IllegalStateException.class, () -> config.createProxy(INVOKED_PROXY, FACTORY));
     assertTrue(ex.getMessage().contains("index map"));
+  }
+
+  // ----- program id placeholder indices -----
+
+  /// The pre-placeholder createProxy overload must keep its exact behaviour: no slot is a
+  /// placeholder, so even the source program id in a mapped slot passes through untouched.
+  @Test
+  void theSixArgCreateProxyOverloadRewritesNoPlaceholders() {
+    final var proxy = IxProxy.<Void>createProxy(
+        INVOKED_PROXY,
+        Discriminator.createDiscriminator(new byte[]{9}),
+        Discriminator.createDiscriminator(new byte[]{7, 8}),
+        List.of(),
+        List.of(),
+        new int[]{0}
+    );
+    final var sentinel = AccountMeta.createRead(CPI_PROGRAM);
+    final var ix = Instruction.createInstruction(CPI_PROGRAM, List.of(sentinel), new byte[]{9, 42});
+    final var mapped = proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, ix);
+    assertEquals(INVOKED_PROXY.publicKey(), mapped.programId().publicKey());
+    assertSame(sentinel, mapped.accounts().getFirst());
+    assertArrayEquals(new byte[]{7, 8, 42}, mapped.data());
+  }
+
+  @Test
+  void placeholderIndicesRequireAProxyDiscriminator() {
+    final var identity = parse("""
+        {"src_discriminator": [7], "program_id_placeholder_indices": [0]}""");
+    final var ex = assertThrows(IllegalStateException.class, () -> identity.createProxy(INVOKED_PROXY, FACTORY));
+    assertTrue(ex.getMessage().contains("placeholder"), ex.getMessage());
+  }
+
+  @Test
+  void placeholderIndicesMustSitInsideTheIndexMap() {
+    for (final var indices : List.of("[2]", "[-1]")) {
+      final var config = parse(("""
+          {"src_discriminator": [7], "dst_discriminator": [9], "index_map": [0, 1], "program_id_placeholder_indices": %s}""")
+          .formatted(indices));
+      final var ex = assertThrows(IllegalStateException.class, () -> config.createProxy(INVOKED_PROXY, FACTORY));
+      assertTrue(ex.getMessage().contains("outside the index map"), ex.getMessage());
+    }
+  }
+
+  @Test
+  void aPlaceholderIndexMappingToADroppedAccountThrows() {
+    final var config = parse("""
+        {"src_discriminator": [7], "dst_discriminator": [9], "index_map": [0, -1], "program_id_placeholder_indices": [1]}""");
+    final var ex = assertThrows(IllegalStateException.class, () -> config.createProxy(INVOKED_PROXY, FACTORY));
+    assertTrue(ex.getMessage().contains("dropped account"), ex.getMessage());
+  }
+
+  @Test
+  void duplicatePlaceholderIndicesThrow() {
+    final var config = parse("""
+        {"src_discriminator": [7], "dst_discriminator": [9], "index_map": [0, 1], "program_id_placeholder_indices": [0, 0]}""");
+    final var ex = assertThrows(IllegalStateException.class, () -> config.createProxy(INVOKED_PROXY, FACTORY));
+    assertTrue(ex.getMessage().contains("Duplicate program id placeholder"), ex.getMessage());
+  }
+
+  /// Only a configured slot actually carrying the source program id is rewritten — to the
+  /// proxy program with the slot's flags preserved; the sentinel elsewhere, a real account
+  /// in the slot, and extra accounts beyond the map all pass through untouched.
+  @Test
+  void placeholderSlotsRewriteTheSourceProgramSentinelToTheProxy() {
+    final var config = parse("""
+        {
+          "src_discriminator": [9],
+          "dst_discriminator": [7, 8],
+          "dynamic_accounts": [{"name": "glam_signer", "index": 0, "writable": true, "signer": true}],
+          "index_map": [1, 2, 3],
+          "program_id_placeholder_indices": [0, 2]
+        }""");
+    final var proxy = config.createProxy(INVOKED_PROXY, FACTORY);
+
+    final var writableSentinel = AccountMeta.createWrite(CPI_PROGRAM);
+    final var unlistedSentinel = AccountMeta.createRead(CPI_PROGRAM);
+    final var realAccount = AccountMeta.createRead(key(31));
+    final var extraSentinel = AccountMeta.createRead(CPI_PROGRAM);
+    final var ix = Instruction.createInstruction(
+        CPI_PROGRAM,
+        List.of(writableSentinel, unlistedSentinel, realAccount, extraSentinel),
+        new byte[]{9}
+    );
+
+    final var mapped = proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, ix);
+    final var accounts = mapped.accounts();
+    assertEquals(5, accounts.size());
+    assertSame(FEE_PAYER, accounts.get(0));
+    // rewritten to the proxy program, writable flag preserved
+    assertEquals(INVOKED_PROXY.publicKey(), accounts.get(1).publicKey());
+    assertTrue(accounts.get(1).write());
+    assertFalse(accounts.get(1).signer());
+    // the sentinel in an unlisted slot is not the mapper's to interpret
+    assertSame(unlistedSentinel, accounts.get(2));
+    // a real account in a listed slot passes through
+    assertSame(realAccount, accounts.get(3));
+    // extras beyond the index map ride as-is
+    assertSame(extraSentinel, accounts.get(4));
   }
 
   @Test
