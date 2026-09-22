@@ -98,7 +98,7 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   normalizes a single-entry meta array back to the single-table form — the
   resulting transaction is identical; only the internal meta wrapper's
   identity differs, which no property-level assertion should pin.
-- `# single-variant-guard` (2 rows, `IxMapConfig.createProxy` line 58): the
+- `# single-variant-guard` (2 rows, `IxMapConfig.createProxy` line 67): the
   false direction of both operands of
   `proxyType != null && proxyType != ProxyType.PAYER`. `ProxyType` has a
   single constant, so "declared type is not PAYER" is unsatisfiable and the
@@ -118,7 +118,7 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   diagnostics with no functional effect, and pinning it would mean asserting
   on a logging backend, a test that restates the implementation.
 - `# empty-copy-equivalent` (2 rows, `IxProxyRecord.mapInstructionUnchecked`
-  line 80): `len > 0` guards a payload `System.arraycopy`; at `len == 0`
+  line 103): `len > 0` guards a payload `System.arraycopy`; at `len == 0`
   (instruction data is exactly the discriminator) the copy is a zero-length
   no-op, so both the boundary flip and the forced-true direction are
   behaviourally identical. `len < 0` is unreachable — the proxy
