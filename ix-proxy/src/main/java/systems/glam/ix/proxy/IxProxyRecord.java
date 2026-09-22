@@ -44,7 +44,17 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
                                              final Instruction instruction) {
     final var accounts = instruction.accounts();
     final int numAccounts = accounts.size();
-    final int numExtraAccounts = numAccounts - indexes.length;
+    // A source may arrive shorter than the index map: a client leaves an absent trailing
+    // optional account out under the omitted strategy. Each missing position must be one the
+    // map drops; one the proxy seats has no account to seat.
+    for (int s = numAccounts; s < indexes.length; ++s) {
+      if (indexes[s] >= 0) {
+        throw new IllegalStateException(String.format(
+            "Instruction supplies %d accounts, but the proxy seats account %d at index %d.", numAccounts, s, indexes[s]
+        ));
+      }
+    }
+    final int numExtraAccounts = Math.max(0, numAccounts - indexes.length);
 
     final var mappedAccounts = new AccountMeta[this.numAccounts + numExtraAccounts];
     for (final var dynamicAccount : dynamicAccounts) {
@@ -65,7 +75,8 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
     // the proxy program, flags preserved. A real account in the slot passes through.
     final var srcProgramId = instruction.programId().publicKey();
     int s = 0, m;
-    for (; s < indexes.length; ++s) {
+    final int mapped = Math.min(indexes.length, numAccounts);
+    for (; s < mapped; ++s) {
       m = indexes[s];
       if (m >= 0) {
         final var account = accounts.get(s);
@@ -77,7 +88,7 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
 
     // Copy extra accounts.
     m = this.numAccounts;
-    for (; s < numAccounts; ++s, ++m) {
+    for (s = indexes.length; s < numAccounts; ++s, ++m) {
       mappedAccounts[m] = accounts.get(s);
     }
 
