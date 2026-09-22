@@ -144,13 +144,19 @@ public final class IxMapperFuzz {
     final Instruction mapped;
     try {
       mapped = programProxy.mapInstruction(FEE_PAYER, null, instruction);
-    } catch (final RuntimeException tolerated) {
-      // rejection is in contract; the unchecked path must also fail closed
+    } catch (final IllegalStateException tolerated) {
+      // rejection is in contract, by message; the unchecked path must fail closed the same way,
+      // never with an index or array error, which a catch-all once hid
       try {
         programProxy.mapInstructionUnchecked(FEE_PAYER, null, instruction);
-      } catch (final RuntimeException alsoTolerated) {
+      } catch (final IllegalStateException alsoTolerated) {
       }
       return;
+    }
+    for (final var account : mapped.accounts()) {
+      if (account == null) {
+        throw new AssertionError("A mapped instruction carries a null account.");
+      }
     }
 
     final int cpiLength = ixProxy.cpiDiscriminator().length();

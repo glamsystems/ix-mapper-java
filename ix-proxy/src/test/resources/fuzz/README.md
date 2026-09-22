@@ -30,6 +30,9 @@ path they pin:
   index).
 - `identity-fixed` / `identity-variable` — pass-through on each lookup shape.
 - `rewrite-variable` — a discriminator-and-data rewrite.
+- `short-source-dropped` — program A with one account against a map whose
+  missing positions are dropped: the success path of a source shorter than
+  its index map.
 - `unknown-program` / `payer-no-accounts` / `short-discriminator` — the
   pass-through and rejection edges.
 

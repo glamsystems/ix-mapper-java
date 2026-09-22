@@ -316,6 +316,11 @@ final class IxMapperTest {
     assertNull(mapToGlamIx(source, glamState, glamSigner));
   }
 
+  /// The TypeScript mapper refuses any source shorter than its index_map; this port refuses
+  /// only a short source that leaves out an account the proxy seats (the System transfer's
+  /// missing account is one), and maps one whose missing positions the map drops, because a
+  /// client following a codama IDL's omitted strategy leaves absent trailing optionals out.
+  /// See README, index_map.
   @Test
   void shouldRejectMalformedInstructionWithTooFewKeys() {
     final var source = Instruction.createInstruction(

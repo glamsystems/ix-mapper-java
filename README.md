@@ -184,6 +184,13 @@ Account Meta information for accounts which are always the same given a Solana c
 Defines the parameter index for the destination instruction. If the account has been removed or replaced use a negative
 number.
 
+A source instruction may arrive with fewer accounts than the index map covers: a client that follows a codama IDL's
+omitted optional-account strategy leaves an absent trailing optional account out entirely (the Stake program's lockup
+authority). This mapper maps such a source when every missing position is one the map drops, and refuses it, naming the
+position and slot, when it would have to seat an account it was not given. The map does not say which dropped positions
+are optional, so any dropped account may be missing; a missing one maps exactly as a supplied one would. The TypeScript
+mapper (`ix-mapper-ts`) refuses every source shorter than its index map instead; the two agree on everything else.
+
 ## Build & Tests
 
 ```shell

@@ -46,7 +46,10 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
     final int numAccounts = accounts.size();
     // A source may arrive shorter than the index map: a client leaves an absent trailing
     // optional account out under the omitted strategy. Each missing position must be one the
-    // map drops; one the proxy seats has no account to seat.
+    // map drops; one the proxy seats has no account to seat. The map does not say which
+    // dropped positions are optional, so any dropped account may be missing: a missing one
+    // maps exactly as a supplied one would, dropped. (The TypeScript mapper refuses every
+    // short source instead; README, index_map.)
     for (int s = numAccounts; s < indexes.length; ++s) {
       if (indexes[s] >= 0) {
         throw new IllegalStateException(String.format(
@@ -75,8 +78,7 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
     // the proxy program, flags preserved. A real account in the slot passes through.
     final var srcProgramId = instruction.programId().publicKey();
     int s = 0, m;
-    final int mapped = Math.min(indexes.length, numAccounts);
-    for (; s < mapped; ++s) {
+    for (; s < indexes.length; ++s) {
       m = indexes[s];
       if (m >= 0) {
         final var account = accounts.get(s);
@@ -86,9 +88,9 @@ final class IxProxyRecord<A> extends BaseIxProxy<A> {
       }
     }
 
-    // Copy extra accounts.
+    // Copy extra accounts; a missing position above was dropped, so none was read.
     m = this.numAccounts;
-    for (s = indexes.length; s < numAccounts; ++s, ++m) {
+    for (; s < numAccounts; ++s, ++m) {
       mappedAccounts[m] = accounts.get(s);
     }
 

@@ -36,13 +36,13 @@ final class OmittedTrailingAccountsTests {
 
   /// Proxy layout: 0 fee payer, 1 static, 2 the source's first account, 3 static. The source
   /// declares three accounts, the last two dropped (an authority the payer stands in for and
-  /// a trailing optional), like a Stake withdraw through GLAM.
+  /// a trailing optional), the shape of a Stake authorize through GLAM, whose map is [4, -1, -1].
   private static IxProxy<Void> proxy() {
     final var config = IxMapConfig.parseConfig(new HashMap<>(), new HashMap<>(), JsonIterator.parse("""
         {
-          "src_ix_name": "withdraw",
-          "src_discriminator": [4, 0, 0, 0],
-          "dst_ix_name": "stake_withdraw",
+          "src_ix_name": "authorize",
+          "src_discriminator": [1, 0, 0, 0],
+          "dst_ix_name": "stake_authorize",
           "dst_discriminator": [1, 2, 3, 4, 5, 6, 7, 8],
           "dynamic_accounts": [ { "name": "glam_signer", "index": 0, "writable": true, "signer": true } ],
           "static_accounts": [
@@ -60,7 +60,7 @@ final class OmittedTrailingAccountsTests {
     for (int i = 0; i < numAccounts; ++i) {
       accounts[i] = AccountMeta.createWrite(key(40 + i));
     }
-    return Instruction.createInstruction(CPI_PROGRAM, List.of(accounts), new byte[]{4, 0, 0, 0, 9});
+    return Instruction.createInstruction(CPI_PROGRAM, List.of(accounts), new byte[]{1, 0, 0, 0, 9});
   }
 
   private static List<PublicKey> keys(final Instruction mapped) {
@@ -101,7 +101,7 @@ final class OmittedTrailingAccountsTests {
     final var config = IxMapConfig.parseConfig(new HashMap<>(), new HashMap<>(), JsonIterator.parse("""
         {
           "src_ix_name": "pass",
-          "src_discriminator": [4, 0, 0, 0],
+          "src_discriminator": [1, 0, 0, 0],
           "dst_ix_name": "proxy_pass",
           "dst_discriminator": [8, 7, 6, 5, 4, 3, 2, 1],
           "dynamic_accounts": [ { "name": "glam_signer", "index": 1, "writable": true, "signer": true } ],
@@ -115,5 +115,31 @@ final class OmittedTrailingAccountsTests {
     final var refused = assertThrows(IllegalStateException.class,
         () -> proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, source(0)));
     assertEquals("Instruction supplies 0 accounts, but the proxy seats account 0 at index 0.", refused.getMessage());
+  }
+  /// A dropped position ahead of a seated one does not hide it: what decides is which
+  /// positions are missing, not how many. A check by counts ("missing no more than dropped")
+  /// would return an instruction with a null account here.
+  @Test
+  void aDroppedMissingAccountAheadOfASeatedOneDoesNotHideIt() {
+    final var config = IxMapConfig.parseConfig(new HashMap<>(), new HashMap<>(), JsonIterator.parse("""
+        {
+          "src_ix_name": "authorize",
+          "src_discriminator": [1, 0, 0, 0],
+          "dst_ix_name": "stake_authorize",
+          "dst_discriminator": [1, 2, 3, 4, 5, 6, 7, 8],
+          "dynamic_accounts": [ { "name": "glam_signer", "index": 0, "writable": true, "signer": true } ],
+          "static_accounts": [
+            { "account": "%s", "index": 1, "writable": false, "signer": false },
+            { "account": "%s", "index": 3, "writable": false, "signer": false }
+          ],
+          "index_map": [-1, -1, 2, -1]
+        }
+        """.formatted(STATIC_BEFORE.toBase58(), STATIC_AFTER.toBase58())));
+    final var proxy = config.createProxy(INVOKED_PROXY, FACTORY);
+    final var mapped = proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, source(3));
+    assertEquals(List.of(FEE_PAYER.publicKey(), STATIC_BEFORE, key(42), STATIC_AFTER), keys(mapped));
+    final var refused = assertThrows(IllegalStateException.class,
+        () -> proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, source(1)));
+    assertEquals("Instruction supplies 1 accounts, but the proxy seats account 2 at index 2.", refused.getMessage());
   }
 }
