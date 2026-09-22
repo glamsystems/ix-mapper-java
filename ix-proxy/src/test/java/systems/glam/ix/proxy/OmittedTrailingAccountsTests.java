@@ -94,4 +94,26 @@ final class OmittedTrailingAccountsTests {
         () -> proxy().mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, source(0)));
     assertEquals("Instruction supplies 0 accounts, but the proxy seats account 0 at index 2.", refused.getMessage());
   }
+  /// Index zero is a seat like any other: a source that leaves out an account the proxy maps
+  /// there is refused, not treated as having nothing to seat.
+  @Test
+  void aRequiredAccountSeatedAtIndexZeroIsNotOmittable() {
+    final var config = IxMapConfig.parseConfig(new HashMap<>(), new HashMap<>(), JsonIterator.parse("""
+        {
+          "src_ix_name": "pass",
+          "src_discriminator": [4, 0, 0, 0],
+          "dst_ix_name": "proxy_pass",
+          "dst_discriminator": [8, 7, 6, 5, 4, 3, 2, 1],
+          "dynamic_accounts": [ { "name": "glam_signer", "index": 1, "writable": true, "signer": true } ],
+          "static_accounts": [],
+          "index_map": [0]
+        }
+        """));
+    final var proxy = config.createProxy(INVOKED_PROXY, FACTORY);
+    final var mapped = proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, source(1));
+    assertEquals(List.of(key(40), FEE_PAYER.publicKey()), keys(mapped));
+    final var refused = assertThrows(IllegalStateException.class,
+        () -> proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, source(0)));
+    assertEquals("Instruction supplies 0 accounts, but the proxy seats account 0 at index 0.", refused.getMessage());
+  }
 }
