@@ -196,6 +196,10 @@ and does not check density, so a gap surfaces at mapping time as a null account 
 data shorter than a fixed-length discriminator matches nothing there, while this mapper's fixed-length lookup zero-pads it,
 so a match is possible and the mapping then refuses it by message (`Expected at least N bytes of instruction data`).
 
+Build Stake program instructions with the builders idl-src-gen generates from the program's IDL; the maps fit that
+account layout. sava-core's hand-written `StakeProgram` emits the legacy layout with the Clock sysvar, which they do not
+fit: the authority lands as a remaining account and GLAM's handlers refuse it.
+
 ## Build & Tests
 
 ```shell
