@@ -95,7 +95,7 @@ Instruction[] mappedInstructions = txMapper.mapInstructions(
 ## Program Mapping Configuration Files
 
 Mapping files define the necessary information for translating a source program instruction that will be called via CPI
-from the destination proxy program.  More example configurations can be found in the [ix-mapper-ts repository](https://github.com/glamsystems/ix-mapper-ts)
+from the destination proxy program.  More example configurations can be found in the [ix-mapper-ts repository](https://github.com/glamsystems/ix-mapper-ts/tree/e067fb4c01987e25bde5473ec368a62191a758e7/mapping-configs-v1) at the commit [downloadMappings.sh](downloadMappings.sh) pins
 
 ### Example Configuration
 
@@ -190,9 +190,9 @@ number.
 ./gradlew check
 ```
 
-Mapping configuration files from the [ix-mapper-ts repository](https://github.com/glamsystems/ix-mapper-ts)
-are needed to run the tests. The build clones them into the untracked `glam/` directory automatically when it is
-missing (see [./downloadMappings.sh](downloadMappings.sh)).
+Mapping configuration files from the [ix-mapper-ts repository](https://github.com/glamsystems/ix-mapper-ts), at the
+commit [./downloadMappings.sh](downloadMappings.sh) pins, are needed to run the tests. The build materializes them
+under the untracked `glam/` directory automatically when it is missing; `./syncMappings.sh <sha>` moves the pin.
 
 ### Sync Re-mapping JSON Files
 

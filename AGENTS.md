@@ -23,12 +23,14 @@ runtime. `glam-sdk-java` is the primary consumer.
   `ConfigLoader`), the proxy/mapping runtime (`TransactionMapper`,
   `ProgramProxy` impls, `IxProxy` impls, `IndexedAccountMeta`,
   `DynamicAccount`).
-- `glam/` (untracked) — mapping configs cloned from
-  `glamsystems/ix-mapper-ts` by `./downloadMappings.sh`. The build downloads
-  it automatically when missing (tests parse and map through every config in
-  it); `./syncMappings.sh` pulls updates. Never make anything depend on its
-  contents being stable — CI fetches it fresh every run, deliberately, so a
-  mapping-config regression upstream fails this repo's build.
+- `glam/` (untracked) — mapping configs from `glamsystems/ix-mapper-ts` at
+  the commit pinned in `./downloadMappings.sh`, which the build runs when the
+  directory is missing (tests parse and map through every config in it);
+  `./syncMappings.sh <sha>` moves the pin. The pin is deliberate: that
+  repository's main now carries the TypeScript mapper package, and the
+  `mapping-configs-v1*` directories exist only in its history. The generated
+  documents this library moves to next live in the GLAM monorepo under
+  `packages/glam/ix-mapper-ts/src/generated/mapping`.
 
 ## Build & test
 
@@ -65,8 +67,8 @@ the user's say-so.
   **same package** as the code under test (JPMS whitebox patching is wired by
   the build plugin) — reach for package-private access, not reflection.
 - `IxMapperTest` is a port of the TypeScript companion suite
-  (`ix-mapper-ts/tests/index.spec.ts`) and drives real instructions through
-  the downloaded production and staging configs. Tests never hit the network
+  (`ix-mapper-ts/tests/index.spec.ts` at the pinned commit) and drives real
+  instructions through the downloaded production and staging configs. Tests never hit the network
   themselves — the one network step is the build's mapping download, which
   runs before tests and only when `glam/` is missing.
 - Randomized tests use fixed seeds; nothing sleeps. Time-dependent code takes

@@ -9,19 +9,20 @@ testModuleInfo {
 
 // IxMapperTest maps real instructions through every config in the untracked
 // glam/ download, so a fresh clone (CI runs plain './gradlew check' via the
-// sava-build reusable workflows) must fetch it before tests run. Once the
-// directory exists this is a no-op; use ./syncMappings.sh to pull updates.
+// sava-build reusable workflows) must fetch it before tests run. The script
+// runs on every build: a glam/ already at the pinned commit is left alone,
+// one at any other commit is replaced, so a checkout that predates the pin
+// cannot test against older configs. ./syncMappings.sh <sha> moves the pin.
 // -PglamMappingsDir=<absolute path> instead points the whole suite at another
 // mappings root holding the same mapping-configs-v1/ and
 // mapping-configs-v1-staging/ layout — the seam that lets regenerated configs
 // face this validation before they are published upstream.
 val downloadMappings by tasks.registering(Exec::class) {
-  description = "Clones the ix-mapper-ts mapping configs into the untracked glam/ directory."
-  val glamDir = rootDir.resolve("glam")
+  description = "Materializes the pinned ix-mapper-ts mapping configs under the untracked glam/ directory."
   val mappingsOverride = providers.gradleProperty("glamMappingsDir")
   workingDir = rootDir
   commandLine("./downloadMappings.sh")
-  onlyIf { !mappingsOverride.isPresent && !glamDir.isDirectory }
+  onlyIf { !mappingsOverride.isPresent }
 }
 
 tasks.withType<Test>().configureEach {
