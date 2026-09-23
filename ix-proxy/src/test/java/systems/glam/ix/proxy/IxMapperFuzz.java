@@ -18,17 +18,27 @@ import java.util.List;
 ///
 /// The fuzz payload is carved into an instruction against a fixed mapper
 /// built from one fixed-length and one variable-length program config
-/// covering every proxy shape (payer, identity, full rewrite):
+/// covering every proxy shape (payer, identity, full rewrite with a static
+/// account and an optional-account sentinel slot):
 /// byte 0 selects the target program, byte 1 packs the account count and an
 /// account-pool rotation, and the rest is the instruction data.
 ///
-/// Malformed-instruction contract: `RuntimeException` out, never a hang or
-/// memory exhaustion. On a successful mapping three properties must hold, and
-/// their violation escapes as an `AssertionError`:
-/// 1. mapped data length is the source length plus the discriminator delta;
-/// 2. the payload behind the discriminator is preserved byte-for-byte;
-/// 3. the mapped program is the invoked proxy program or, for payer/identity
+/// Malformed-instruction contract: `IllegalStateException` out, by message,
+/// never an index or array error, a hang or memory exhaustion. On a successful
+/// mapping four properties must hold, and their violation escapes as an
+/// `AssertionError`:
+/// 1. no mapped account is null;
+/// 2. mapped data length is the source length plus the discriminator delta;
+/// 3. the payload behind the discriminator is preserved byte-for-byte;
+/// 4. the mapped program is the invoked proxy program or, for payer/identity
 ///    mappings, the source program.
+///
+/// Precondition the rejection branch relies on: no configured discriminator
+/// ends in a zero byte. The fixed-length lookup zero-pads data shorter than
+/// its discriminator (`Instruction.wrapDiscriminator` copies past the end), so
+/// a zero-terminated one would let a short source match and reach the mapping
+/// with less data than the discriminator, which the unchecked path does not
+/// validate.
 ///
 /// Deliberately free of Jazzer imports so it compiles with the regular test
 /// sources.
@@ -50,7 +60,9 @@ public final class IxMapperFuzz {
   private static final AccountMeta FEE_PAYER = AccountMeta.createFeePayer(FEE_PAYER_KEY);
 
   /// Every writable/signer combination, for the fee payer's key and others,
-  /// so the payer proxy's keep-vs-replace decision is reachable both ways.
+  /// so the payer proxy's keep-vs-replace decision is reachable both ways, and
+  /// the source program id, the optional-account None sentinel the rewrite
+  /// proxy swaps for the proxy program in a placeholder slot.
   private static final AccountMeta[] ACCOUNT_POOL = {
       AccountMeta.createFeePayer(FEE_PAYER_KEY),
       AccountMeta.createWrite(FEE_PAYER_KEY),
@@ -59,6 +71,7 @@ public final class IxMapperFuzz {
       AccountMeta.createWritableSigner(key(6)),
       AccountMeta.createWrite(key(7)),
       AccountMeta.createRead(key(8)),
+      AccountMeta.createRead(PROGRAM_A),
   };
 
   private static final TransactionMapper<Void> MAPPER = createMapper();
@@ -69,7 +82,6 @@ public final class IxMapperFuzz {
           "program_id": "%s",
           "instructions": [
             {
-              "type": "payer",
               "src_ix_name": "transfer",
               "src_discriminator": [1, 2],
               "dst_ix_name": "proxy_transfer",
@@ -78,6 +90,11 @@ public final class IxMapperFuzz {
               "static_accounts": [{"account": "%s", "index": 1, "writable": false, "signer": false}],
               "index_map": [2, -1],
               "program_id_placeholder_indices": [0]
+            },
+            {
+              "src_discriminator": [5, 6],
+              "dynamic_accounts": [{"name": "glam_signer", "index": 0, "writable": true, "signer": true}],
+              "index_map": [-1, 1]
             },
             {"src_discriminator": [8, 9]}
           ]
@@ -130,13 +147,9 @@ public final class IxMapperFuzz {
       return;
     }
 
-    final IxProxy<Void> ixProxy;
-    try {
-      ixProxy = programProxy.lookupProxy(instruction);
-    } catch (final RuntimeException tolerated) {
-      // e.g. data shorter than the fixed discriminator length
-      return;
-    }
+    // Lookup never throws: the fixed-length lookup zero-pads short data and the
+    // variable-length scan skips a discriminator longer than the data.
+    final var ixProxy = programProxy.lookupProxy(instruction);
     if (ixProxy == null) {
       return;
     }

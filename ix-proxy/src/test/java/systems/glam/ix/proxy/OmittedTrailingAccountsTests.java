@@ -94,6 +94,7 @@ final class OmittedTrailingAccountsTests {
         () -> proxy().mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, source(0)));
     assertEquals("Instruction supplies 0 accounts, but the proxy seats account 0 at index 2.", refused.getMessage());
   }
+
   /// Index zero is a seat like any other: a source that leaves out an account the proxy maps
   /// there is refused, not treated as having nothing to seat.
   @Test
@@ -116,9 +117,10 @@ final class OmittedTrailingAccountsTests {
         () -> proxy.mapInstruction(READ_CPI_PROGRAM, FEE_PAYER, null, source(0)));
     assertEquals("Instruction supplies 0 accounts, but the proxy seats account 0 at index 0.", refused.getMessage());
   }
+
   /// A dropped position ahead of a seated one does not hide it: what decides is which
   /// positions are missing, not how many. A check by counts ("missing no more than dropped")
-  /// would return an instruction with a null account here.
+  /// would pass this source and fail at the seat with an index error instead of a refusal.
   @Test
   void aDroppedMissingAccountAheadOfASeatedOneDoesNotHideIt() {
     final var config = IxMapConfig.parseConfig(new HashMap<>(), new HashMap<>(), JsonIterator.parse("""

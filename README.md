@@ -189,7 +189,12 @@ omitted optional-account strategy leaves an absent trailing optional account out
 authority). This mapper maps such a source when every missing position is one the map drops, and refuses it, naming the
 position and slot, when it would have to seat an account it was not given. The map does not say which dropped positions
 are optional, so any dropped account may be missing; a missing one maps exactly as a supplied one would. The TypeScript
-mapper (`ix-mapper-ts`) refuses every source shorter than its index map instead; the two agree on everything else.
+mapper (`ix-mapper-ts`) refuses every source shorter than its index map instead. Given a map both load, the two apply it
+identically to a source that covers it; they differ at the edges. At load, the TypeScript mapper refuses an `index_map`
+value below `-1` and a set of proxy indices that is not dense from 0; this mapper treats every negative value as dropped
+and does not check density, so a gap surfaces at mapping time as a null account or an index error. On lookup, instruction
+data shorter than a fixed-length discriminator matches nothing there, while this mapper's fixed-length lookup zero-pads it,
+so a match is possible and the mapping then refuses it by message (`Expected at least N bytes of instruction data`).
 
 ## Build & Tests
 

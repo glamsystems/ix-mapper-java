@@ -317,10 +317,11 @@ final class IxMapperTest {
   }
 
   /// The TypeScript mapper refuses any source shorter than its index_map; this port refuses
-  /// only a short source that leaves out an account the proxy seats (the System transfer's
-  /// missing account is one), and maps one whose missing positions the map drops, because a
-  /// client following a codama IDL's omitted strategy leaves absent trailing optionals out.
-  /// See README, index_map.
+  /// only a short source that leaves out an account the proxy seats, and maps one whose
+  /// missing positions the map drops, because a client following a codama IDL's omitted
+  /// strategy leaves absent trailing optionals out. See README, index_map. Here both transfer
+  /// accounts are missing: `from` is dropped and `to` is seated at index 4, so the refusal
+  /// names `to`.
   @Test
   void shouldRejectMalformedInstructionWithTooFewKeys() {
     final var source = Instruction.createInstruction(
@@ -328,7 +329,8 @@ final class IxMapperTest {
         List.of(),
         new byte[]{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
     );
-    assertThrows(RuntimeException.class, () -> mapToGlamIx(source, glamState, glamSigner));
+    final var refused = assertThrows(IllegalStateException.class, () -> mapToGlamIx(source, glamState, glamSigner));
+    assertEquals("Instruction supplies 0 accounts, but the proxy seats account 1 at index 4.", refused.getMessage());
   }
 
   @Test

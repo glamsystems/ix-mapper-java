@@ -94,8 +94,9 @@ replayed inside `check` by generated `*FuzzSeedReplayTest`s:
 external, downloaded config JSON — `ProgramMapConfig.parseConfig` through
 `createProgramProxies`; `fuzzIxMapper` (`IxMapperFuzz`) carves arbitrary
 bytes into instructions and drives `lookupProxy`/`mapInstruction` — the path
-that faces user-submitted transactions — asserting length/payload/program
-properties on every successful mapping. Register new harnesses in
+that faces user-submitted transactions — asserting the no-null-account,
+length, payload and program properties on every successful mapping and a
+refusal by message on every rejection. Register new harnesses in
 the `hardening` block with `targetClass` AND `seedCorpus` (both required — a
 missing `seedCorpus` silently skips the replay test).
 
