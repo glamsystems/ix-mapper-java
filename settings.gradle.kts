@@ -1,4 +1,4 @@
-rootProject.name = "ix-proxy"
+rootProject.name = "ix-mapper-java"
 
 pluginManagement {
   // Point '-PsavaBuildLocalRepo=<sava-build>/build/sava-test-repo' (or set it in
