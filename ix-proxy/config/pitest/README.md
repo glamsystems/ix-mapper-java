@@ -1,128 +1,94 @@
 # Mutation-testing triage record
 
-The `ixProxy` accepted baseline contains 13 fully triaged `SURVIVED` rows and
-no `NO_COVERAGE` or `# untriaged` debt. Its labels map to the equivalence
-arguments below; the timeout audit has two separately documented liveness
-members. The installed sava-build version's `hardeningHelp`, generated agent
-template, and `HARDENING.md` are authoritative for task and record semantics.
-Use its named writer tasks for record changes; never hand-edit record structure
-or provenance stamps.
+The `ixProxy` accepted baseline holds the five unkilled rows of the document mapper (1089
+mutants, 1084 killed on the recorded run, under PIT 1.25.9), each with a family label
+whose equivalence argument is below; the timeout audit has no members. The installed
+sava-build version's `hardeningHelp`, generated agent template, and `HARDENING.md` are
+authoritative for task and record semantics. Use its named writer tasks for record
+changes; never hand-edit record structure or provenance stamps.
 
 ## Triage history
 
-The baseline was seeded from pre-existing debt and then worked down. These
-entries preserve the measurements and commands used at the time.
-
-- **Seeded 2026-07-29** (`pitestIxProxy -PupdateMutationBaseline`): 328 rows —
-  148 `SURVIVED`, 180 `NO_COVERAGE` — against 27 killed of 355 generated.
-  The `NO_COVERAGE` population is dominated by `ConfigLoader` (never
-  exercised by a test) and the error/edge branches of the parsers
-  (`ProgramMapConfig`, `IxMapConfig`, `DynamicAccountConfig`,
-  `IndexedAccountMetaRecord`); the `SURVIVED` population by the mapping
-  runtime (`BaseIxProxy`, `PayerIxProxy`, proxy lookup paths), where
-  `IxMapperTest` executes the code but asserts too little of it. Use
-  `pitestIxProxyDebt` to rank the remainder by class when picking the next
-  cluster.
-- **Refreshed 2026-07-29** after migrating `IxMapConfig.Parser` to the
-  json-iterator `FieldMatcher`/`readByteArray`/`readIntArray` APIs: 284 rows
-  (104 `SURVIVED`, 180 `NO_COVERAGE`) of 311 generated — the refactor
-  deleted the hand-rolled two-pass `mark()`/`reset()` array loops and their
-  44 mutants outright; the 7 rows in `Parser.create` carried across as pure
-  line shifts.
-- **Worked 2026-07-29** from 27/311 (8%) to 289/311 (92%): direct
-  parse-and-assert suites for every config parser, transaction/table
-  plumbing tests for `ProgramProxyMap`, `createProxy` validation and proxy
-  behaviour tests for `IxMapConfig`/`PayerIxProxy`/`IdentityIxProxy`/
-  `IxProxyRecord`, lookup tests for both program-proxy shapes, and a
-  scripted `StubHttpClient` driving `ConfigLoader`'s remote worker without a
-  socket. Baseline 284 → 22 rows: 12 accepted with reasons (below), 10
-  `# untriaged`.
-
-- **Worked 2026-07-31**: the Worker retry path, previously the remaining
-  `# untriaged` debt (10 `NO_COVERAGE` rows), was covered by adding a
-  `ConfigLoader.Sleeper` seam (package-private; production passes
-  `Thread::sleep`) and driving `Worker` directly on the test thread with a
-  scripted flaky `StubHttpClient` — backoff schedule, cap, retry bound,
-  and the InterruptedException handler are all asserted without real waits.
-  A truncated-instruction-data guard was also added to
-  `BaseIxProxy.validateMapping` (previously an `ArrayIndexOutOfBoundsException`
-  escaped from `Arrays.equals`). Baseline 22 → 13 rows: the 12 accepted
-  equivalents carried over; the worker's retry log call is newly covered and
-  accepted as `# log-only` (below). No `# untriaged` rows remain.
-- **Adopted sava-build 21.5.28 on 2026-08-26**: a fresh history-free run
-  reproduced 315 mutants, 302 detected, 13 labeled survivors, two audited
-  liveness timeouts, and no `NO_COVERAGE`. `pitestIxProxyBaselineRebase`
-  retained all accepted rows and bound them to PIT 1.25.9 and its toolchain;
-  `migrateMutationBaselines` then moved the record to schema 1, preserving the
-  13-row multiset and its labels while making source lines metadata.
+- **Seeded 2026-07-29** and worked down through 2026-08-26 for the index-map mapper
+  (`ProgramMapConfig`, `TransactionMapper`, `ConfigLoader` and the proxy classes): 13
+  accepted rows, two audited liveness timeouts, no `NO_COVERAGE`. That code is gone.
+- **Rewritten 2026-09-24** on the mapping document (`JsonSyntax`, `MappingDocumentParser`,
+  `DocumentMapper`, `InstructionMapper` and the sealed model). Every mutated class is new,
+  so the record was re-seeded whole with `pitestIxProxyBaselineUpdate` after the first
+  survivors were argued, and the 13 old rows and both old timeout members left with their
+  classes. The first history-free run of the rewrite reproduced 692 mutants with 518
+  killed; the parser's refusal paths were then given a row per field, the redundant
+  pre-checks that produced equivalent mutants were removed, and two local review rounds
+  added the syntax pass, the deferred top-level checks, the binary64 number reads, the
+  unreadable-instruction refusals and the format-preserving transaction rebuild, each with
+  its rows. Later rows joined through `pitestIxProxyBaselineUnion` and were labelled; the
+  one row those rounds killed left through `pitestIxProxyBaselinePrune` after two matching
+  previews, and `pitestIxProxyBaselineRetag` refreshed the line tags.
+- **Second review round, 2026-09-24:** a fuzz finding (a malformed UTF-8 byte the reader
+  threw on) gave the syntax pass its UTF-8 and surrogate-escape checks, and the string
+  scanner was restructured around one advance point (below). The records took their own
+  field checks, with this library's wording so a disabled parser check stays visible to the
+  contract's rows. The address bound's four `# cost-guard` rows left in two steps: a timing
+  test killed the upper bound's row (pruned with the timing test in place) and was itself
+  dropped for too thin a margin; then
+  `MappingDocumentParserTests.theBoundAndTheAlphabetKeepStringsOutsideThemFromTheDecoder`
+  (property: the decoder is never called for a string outside the spelling bound or the
+  alphabet, checked with a counting decoder handed to the package-private `decodeAddress`
+  overload) killed the other three, pruned once the counting test was in. The directory
+  reader now keys a `TreeMap` by file name, so its comparator row left and the key's
+  receiver row joined the same family through `pitestIxProxyBaselineUnion`. The recorded
+  run: 2026-09-24, PIT 1.25.9, full scope, history-free (`-PnoMutationHistory`), the
+  mappings root the tracked `ix-mapper-ts/` directory (copied from ix-mapper-ts 16320bf).
 
 ## Timed-out mutants (audited set)
 
-`ConfigLoader$Worker.get` line 138, `MathMutator` and
-`RemoveConditionalMutator_ORDER_ELSE` (seeded 2026-07-31): both mutate the
-retry bound `++errorCount > maxRetries` — the increment into a decrement,
-the comparison into always-false — so the IOException retry loop never
-exits. The covering tests inject a non-blocking `Sleeper`, so the mutant
-spins the loop indefinitely instead of sleeping, and PIT can only detect it
-as a timeout. Both audit rows are classified `cause:liveness`: the cause is
-structural (an unbounded loop), not a slow test, and any mutation that removes
-the loop's only exit lands here.
+None. The old `ConfigLoader$Worker.get` liveness members went with the class. During the
+rewrite two `JsonSyntax` loop mutants (the `++i` of the array and string scanners turned
+into `--i`) timed out once as unbounded loops, and in the second review a `MathMutator` on
+the string scanner walked the cursor back onto the escape it had just read and hung. The
+scanner now moves its cursor through `take()` alone, with no other assignment or
+arithmetic on it: a reversed cursor fails on its first read, and every other mutant of the
+scan is a refusal or an admission the syntax rows observe. A shadow check over the entries
+timed out once with its outer loop's exit forced true and now fails fast, since the loop
+reads its entry at the top of each step.
 
 ## Mutator-set trials
 
-`STRONGER` is the default. `EXPERIMENTAL_NAKED_RECEIVER` was trialed
-2026-07-29 (`-PtrialMutators=STRONGER,EXPERIMENTAL_NAKED_RECEIVER`):
-355 generated without → 355 with, zero fires (re-trialed after the
-FieldMatcher migration the same day: 311 → 311) — this code returns records,
-arrays and fresh instructions, not fluent receivers, so it stays off.
-Re-trial if builder-style code is introduced. No mutated class performs
-`BigInteger`/`BigDecimal` arithmetic, so `EXPERIMENTAL_BIG_INTEGER` was not
-trialed.
+`STRONGER` plus `EXPERIMENTAL_NAKED_RECEIVER`. The receiver mutator was trialed 2026-07-29
+on the old code (355 → 355, zero fires) and stayed off; re-trialed on the rewrite on
+2026-09-24 (`-PtrialMutators=STRONGER,EXPERIMENTAL_NAKED_RECEIVER`) it fired, 948 → 1009
+generated, on the reader's fluent `skip()` calls, the exception's message accessor and the
+path and string helpers, so it is enabled. Its two surviving receivers are argued below;
+the message-accessor cluster was refactored out (`MappingDocumentException.detail()`
+replaces `getMessage().substring(2)`). `plainNumber` reads a number's digits through
+`BigDecimal` (construction, `stripTrailingZeros`, `scale`) and the `BigInteger` its
+`unscaledValue()` returns (only `toString`), with no arithmetic on either, and both
+mutators, trialed 2026-09-24 by running the suite's own set plus each candidate
+(`-PtrialMutators=STRONGER,EXPERIMENTAL_NAKED_RECEIVER,` plus `EXPERIMENTAL_BIG_DECIMAL`,
+then `EXPERIMENTAL_BIG_INTEGER`), added no mutant: under PIT 1.25.9, on an earlier
+revision of the rewrite (1086 mutants), 1086 → 1086 generated each (the trial summary
+counts the suite's own mutators as fired; the generated count is the evidence). Both stay
+off.
 
 ## Triaged equivalent mutants (accepted with reasons)
 
-Group by the principle that makes them equivalent (see the recurring families
-in HARDENING.md); the baseline CSVs carry the exact keys.
+Group by the principle that makes them equivalent (see the recurring families in
+HARDENING.md); the baseline CSV carries the exact keys.
 
-- `# defensive-null-tables` (6 rows, `ProgramProxyMap` lines 60/89/127):
-  both operand directions of `tables == null || tables.length == 0` on the
-  `== null` operand. sava's `TransactionRecord` never returns a null
-  `tableAccountMetas()` — it uses the `NO_TABLES` empty-array constant — so
-  the null operand is defensive against foreign `Transaction`
-  implementations. Killing it would need a hand-rolled fake `Transaction`
-  returning null, a test that restates the implementation rather than a
-  property. The `length == 0` operands at the same coordinates are killed.
-- `# delegation-equivalent` (1 row, `ProgramProxyMap.mapTransactionWithTables`
-  line 114): removing the `numNewTables == 1` fast path routes a single
-  added table through the multi-table branch, and sava's transaction factory
-  normalizes a single-entry meta array back to the single-table form — the
-  resulting transaction is identical; only the internal meta wrapper's
-  identity differs, which no property-level assertion should pin.
-- `# single-variant-guard` (2 rows, `IxMapConfig.createProxy` line 58): the
-  false direction of both operands of
-  `proxyType != null && proxyType != ProxyType.PAYER`. `ProxyType` has a
-  single constant, so "declared type is not PAYER" is unsatisfiable and the
-  guard cannot fire — the mutants are equivalent until a second proxy type
-  exists. **Re-triage when a `ProxyType` constant is added**; both true
-  directions are killed by the payer tests.
-- `# invariant-guard` (1 row, `BaseIxProxy.validateMapping` line 29): the
-  false direction of `cpiDiscriminatorBytes.length != cpiDiscriminator.length()`
-  — `cpiDiscriminatorBytes` is `cpiDiscriminator.data()` captured in the
-  constructor, so the two lengths agree by construction of every
-  `Discriminator` implementation; the guard exists to catch a broken foreign
-  `Discriminator` and cannot fire in-harness.
-- `# log-only` (1 row, `ConfigLoader$Worker.get` line 142): removing the
-  `System.Logger::log` call that announces a retry. The retry's observable
-  behaviour — the backoff delays, the bound, the eventual result or rethrow —
-  is fully asserted by `ConfigLoaderTests`; the log line is operator
-  diagnostics with no functional effect, and pinning it would mean asserting
-  on a logging backend, a test that restates the implementation.
-- `# empty-copy-equivalent` (2 rows, `IxProxyRecord.mapInstructionUnchecked`
-  line 80): `len > 0` guards a payload `System.arraycopy`; at `len == 0`
-  (instruction data is exactly the discriminator) the copy is a zero-length
-  no-op, so both the boundary flip and the forced-true direction are
-  behaviourally identical. `len < 0` is unreachable — the proxy
-  discriminator write into the undersized target array fails first.
+- `# top-level-predicate-return` (`DocumentBuilder.test`, the duplicate-field branch): the
+  field predicate returns `true` after skipping a field named twice; returning `false`
+  there ends the object read early, and the build refuses the duplicate before it looks at
+  anything the early end left unread, so the refusal is the same. The predicate's other
+  returns are killed by the member-order rows.
+- `# unreachable-equality` (`MappingDocumentParser.validateShape`, `plainNumber`): the
+  boundary of `source <= lastOmittableSource`, where equal sources are refused earlier as a
+  position forwarded twice; and the sign test `e > 0` on a printed exponent, reached only
+  when the exponent is at least 21 or at most -7. In both the equal case cannot arrive, so
+  the two boundary forms are observationally identical.
+- `# equivalent path-suffix` (`MappingDocuments.readDirectory`, 2 rows): the naked
+  receivers of `path.getFileName()` in the `.json` filter and in the `TreeMap` key. A
+  path's string form always ends with its file name's string form, and within one
+  directory ordering by path is ordering by file name, so neither mutant changes which
+  files are read or in what order.
 
-Shrinking a baseline is always an improvement; growing one requires a reason
-here.
+Shrinking a baseline is always an improvement; growing one requires a reason here.

@@ -48,6 +48,7 @@ target/
 
 !gradle-wrapper.jar
 
+# the download the pull-by-pin build made before the documents were tracked; delete it
 /glam
 /symlinks/
 /.junie/

@@ -10,27 +10,47 @@ untracked `AGENTS.local.md`, not here.
 
 The GLAM instruction mapper: a small, dependency-light Java library that
 rewrites arbitrary Solana instructions into their GLAM proxy-program
-equivalents. Mapping rules are data, not code — per-program JSON configs
-maintained in `glamsystems/ix-mapper-ts` — and this library parses them
-(`ProgramMapConfig`), builds proxy lookups (`TransactionMapper`,
-`ProgramProxy`, `IxProxy`), and remaps discriminators and account lists at
-runtime. `glam-sdk-java` is the primary consumer.
+equivalents. Mapping rules are data, not code — one mapping document per
+source program and environment, generated in the GLAM monorepo
+(`packages/glam/ix-mapper-ts`) and published through
+`glamsystems/ix-mapper-ts` — and this library parses them
+(`MappingDocumentParser`), holds them (`MappingDocument`, `InstructionEntry`,
+`SourceAccount`, `DestinationAccount`) and remaps discriminators and account
+lists at runtime (`InstructionMapper`, `MapResult`, `MappingContext`).
+The TypeScript package in that repository is the other mapper of the same
+documents; the two share a schema, a rule set and the contract's refusal
+messages (what this mapper refuses on its own is listed on the tracking
+issue), and the conformance cases under that package's `test/data/cases`
+are the contract both must pass. `glam-sdk-java` is the primary consumer.
 
 ### Layout
 
-- `ix-proxy/` (JPMS module `systems.glam.ix.proxy`) — the whole library.
-  Config parsing (`ProgramMapConfig`, `IxMapConfig`, `DynamicAccountConfig`,
-  `ConfigLoader`), the proxy/mapping runtime (`TransactionMapper`,
-  `ProgramProxy` impls, `IxProxy` impls, `IndexedAccountMeta`,
-  `DynamicAccount`).
-- `glam/` (untracked) — mapping configs from `glamsystems/ix-mapper-ts` at
-  the commit pinned in `./downloadMappings.sh`, which the build runs when the
-  directory is missing (tests parse and map through every config in it);
-  `./syncMappings.sh <sha>` moves the pin. The pin is deliberate: that
-  repository's main now carries the TypeScript mapper package, and the
-  `mapping-configs-v1*` directories exist only in its history. The generated
-  documents this library moves to next live in the GLAM monorepo under
-  `packages/glam/ix-mapper-ts/src/generated/mapping`.
+- `ix-proxy/` (JPMS module `systems.glam.ix_proxy`, package
+  `systems.glam.ix.proxy`) — the whole library. The document model (sealed
+  `InstructionEntry`, `DestinationAccount`, `Expectation`; records
+  `MappingDocument`, `SourceAccount`, `Handler`, `Provenance`), the parser
+  (`MappingDocumentParser`, `MappingDocuments` for files), the mapper
+  (`InstructionMapper` over `DocumentMapper`, `MappingContext`, sealed
+  `MapResult`, `UnsupportedReason`, `UnsupportedInstructionException`) and
+  `MappingDocumentException` for a document that does not admit.
+- `ix-mapper-ts/` — the generated documents
+  (`src/generated/mapping/{production,staging}`) and the conformance cases
+  (`test/data/cases`) of the TypeScript package, in its layout, written by
+  the GLAM monorepo's public-sync workflow and never by hand
+  (`ix-mapper-ts/README.md`; the first copy was made by hand from
+  ix-mapper-ts 16320bf). The trade-off: an upstream document or case change
+  is tested here only once its sync commit lands on `main`, and a sync
+  commit is a test-only change that lands without a mutation run, so the
+  next code change's `pitestIxProxy -PnoMutationHistory` run is where a case
+  it changed shows its effect. The hardening plugin's evidence manifest does
+  not fingerprint the tracked tree, nor an override tree edited in place, so
+  after either changes run `pitestIxProxy -PnoMutationHistory` before
+  trusting a standalone `pitestIxProxyVerify`. `-PglamMappingsDir=<path>`
+  (resolved against the repository root) points the suite, and PIT's minion,
+  at a local checkout of the package instead, for documents and cases that are
+  not synced yet; the mapping content is a declared test input either way. A
+  PIT run refuses a path the hardening plugin cannot write into the minion's
+  argument file.
 
 ## Build & test
 
@@ -66,11 +86,16 @@ the user's say-so.
 - JUnit 5, built-in `Assertions`, package-private `final class` tests in the
   **same package** as the code under test (JPMS whitebox patching is wired by
   the build plugin) — reach for package-private access, not reflection.
-- `IxMapperTest` is a port of the TypeScript companion suite
-  (`ix-mapper-ts/tests/index.spec.ts` at the pinned commit) and drives real
-  instructions through the downloaded production and staging configs. Tests never hit the network
-  themselves — the one network step is the build's mapping download, which
-  runs before tests and only when `glam/` is missing.
+- `MapperConformanceTest` runs every case under the package's
+  `test/data/cases`: an instruction, a context and the whole expected result,
+  message included, against the case's own documents or an environment's
+  generated set. A rule of the shared contract lands as a case there (in the
+  GLAM monorepo), so both mappers stay one contract; a rule the case format
+  cannot express (what this parser refuses beyond the contract) is tested
+  here and listed on the tracking issue. `MappingDocumentParserTests` carries
+  the contract's refusal table and the rows this parser adds. Tests never hit
+  the network; the build's only network use is dependency and JDK
+  resolution.
 - Randomized tests use fixed seeds; nothing sleeps. Time-dependent code takes
   a clock seam, never the wall clock — give test clocks a non-zero origin.
 
@@ -78,28 +103,23 @@ the user's say-so.
 
 The `ix-proxy` module registers the PIT suite `pitestIxProxy` via the
 `software.sava.build.feature.hardening` plugin, targeting
-`systems.glam.ix.proxy.*` by wildcard with test sources excluded, so a new
-class is mutated by default. The run diffs unkilled mutants against the
-accepted baseline in `ix-proxy/config/pitest/` and fails on anything new. The
-baseline was seeded with the full pre-existing survivor population and has
-since been **worked down to fully-triaged equivalents** — every row carries a
-family label whose equivalence argument lives in `config/pitest/README.md`,
-which also tracks the debt history and the audited timeout set.
-`EXPERIMENTAL_NAKED_RECEIVER` was trialed and
-generated zero additional mutants (twice — latest 311 → 311), so the suite
-stays on plain `STRONGER` — re-trial if fluent/builder-style code is
-introduced.
+`systems.glam.ix.proxy.*` by wildcard with test sources and the test
+helpers excluded, so a new class is mutated by default. The run diffs
+unkilled mutants against the accepted baseline in `ix-proxy/config/pitest/`
+and fails on anything new. The record was re-seeded for the document mapper;
+`config/pitest/README.md` holds the triage history, the family arguments and
+the mutator-trial status.
 
 Two fuzz targets, with seed corpora under `ix-proxy/src/test/resources/fuzz/`
 replayed inside `check` by generated `*FuzzSeedReplayTest`s:
 `fuzzMappingConfig` (`MappingConfigFuzz`) drives the full startup path for
-external, downloaded config JSON — `ProgramMapConfig.parseConfig` through
-`createProgramProxies`; `fuzzIxMapper` (`IxMapperFuzz`) carves arbitrary
-bytes into instructions and drives `lookupProxy`/`mapInstruction` — the path
-that faces user-submitted transactions — asserting length/payload/program
-properties on every successful mapping. Register new harnesses in
-the `hardening` block with `targetClass` AND `seedCorpus` (both required — a
-missing `seedCorpus` silently skips the replay test).
+external document JSON — `MappingDocumentParser.parse` through
+`InstructionMapper.createMapper`; `fuzzIxMapper` (`IxMapperFuzz`) carves
+arbitrary bytes into instructions and drives `InstructionMapper.map` — the
+path that faces user-submitted transactions — asserting the program, the
+data and every seat on every mapped result. Register new harnesses
+in the `hardening` block with `targetClass` AND `seedCorpus` (both required —
+a missing `seedCorpus` silently skips the replay test).
 
 Full fuzz campaigns are deliberately local-only. There is no GitHub Actions
 fuzz workflow because its CI runner cost is not justified for this library;
@@ -164,12 +184,15 @@ changes here:
 
 For this repo, iterate with `:ix-proxy:test`; changes that can reach mutated
 code, including test-only edits, owe `pitestIxProxy`, while doc, comment, and
-build-script-only changes owe no mutation suite. `hardeningCertify` is owned by
-the local release checklist; `:hardeningCertifyAll` certifies every suite and
-also writes the root manifest `.pitest-history/pitest-certification-all.tsv`.
-This GLAM repo is outside the Sava ArcMutate certificate and certifies with
-open-source PIT.
+build-script-only changes owe no mutation suite (a build-script change that
+moves the mutation toolchain takes `pitestIxProxyBaselineRebase`, as the block
+above says). `hardeningCertify` is owned by the local release checklist;
+`:hardeningCertifyAll` certifies every suite and also writes the root manifest
+`.pitest-history/pitest-certification-all.tsv`. This GLAM repo is outside the
+Sava ArcMutate certificate and certifies with open-source PIT.
 
-`IxMapperTest` constructs its mappers in static fields. If mapper-construction
-wiring mutants wander or survive, construct the mapper inside the test body
-before diagnosing elsewhere.
+`IxMapperFuzz` builds its mapper in a static field by design (one mapper for
+every input), and `IxMapperFuzzSeedsTests` replays the committed seeds through
+that same static `MAPPER`; the other JUnit suites build theirs inside the test
+body. If mapper-construction wiring mutants wander or survive, construct the
+mapper inside the test body before diagnosing elsewhere.

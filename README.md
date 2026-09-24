@@ -1,207 +1,102 @@
-# ixProxy [![Gradle Check](https://github.com/glamsystems/ix-mapper-java/actions/workflows/build.yml/badge.svg)](https://github.com/glamsystems/ix-mapper-java/actions/workflows/build.yml) [![Publish Release](https://github.com/glamsystems/ix-mapper-java/actions/workflows/publish-gh.yml/badge.svg)](https://github.com/glamsystems/ix-mapper-java/actions/workflows/publish-gh.yml)
+# ix-mapper-java [![Gradle Check](https://github.com/glamsystems/ix-mapper-java/actions/workflows/build.yml/badge.svg)](https://github.com/glamsystems/ix-mapper-java/actions/workflows/build.yml) [![Publish Release](https://github.com/glamsystems/ix-mapper-java/actions/workflows/publish-gh.yml/badge.svg)](https://github.com/glamsystems/ix-mapper-java/actions/workflows/publish-gh.yml)
 
-Facilitates the re-mapping of instructions from one program to another proxy program. The primary use case is to add
-additional safety checks in the proxy program before and after forwarding the request to the original program.
+Rewrites Solana instructions into their GLAM proxy-program equivalents. A vault's delegate
+builds an instruction the way any client of the native program would, and the mapper turns
+it into the GLAM instruction that performs it through the vault: the proxy program adds its
+access checks before and after forwarding the request to the native program.
 
-## [Transaction Mapper](https://github.com/glamsystems/ix-mapper-java/blob/main/ix-proxy/src/main/java/systems/glam/ix/proxy/TransactionMapper.java)
+The rules are data, not code: one **mapping document** per source program and environment,
+generated upstream from the native and the proxy IDLs and published through the
+[ix-mapper-ts](https://github.com/glamsystems/ix-mapper-ts) repository. The TypeScript package
+there and this library read the same documents, and the conformance cases that ship with them
+are tested against both.
 
-The transaction mapper can be used to map a list of instructions or entire transactions.
-
-### Example Construction
-
-A dynamic account factory is needed from the user to provide the functions for wiring runtime accounts.
-
-This example uses a simple version that could be used for the GLAM proxy program.
-
-```java
-record GlamVaultAccounts(AccountMeta readGlamState,
-                         AccountMeta writeGlamState,
-                         AccountMeta readGlamVault,
-                         AccountMeta writeGlamVault) {
-
-  static GlamVaultAccounts createAccounts(final PublicKey stateAccount, final PublicKey vaultAccount) {
-    return new GlamVaultAccounts(
-        AccountMeta.createRead(stateAccount),
-        AccountMeta.createWrite(stateAccount),
-        AccountMeta.createRead(vaultAccount),
-        AccountMeta.createWrite(vaultAccount)
-    );
-  }
-}
-
-Function<DynamicAccountConfig, DynamicAccount<GlamVaultAccounts>> dynamicAccountFactory = accountConfig -> {
-  final int index = accountConfig.index();
-  final boolean w = accountConfig.writable();
-  return switch (accountConfig.name()) {
-    case "glam_state" -> (mappedAccounts, _, _, vaultAccounts) -> mappedAccounts[index] = w
-        ? vaultAccounts.writeGlamState() : vaultAccounts.readGlamState();
-    case "glam_vault" -> (mappedAccounts, _, _, vaultAccounts) -> mappedAccounts[index] = w
-        ? vaultAccounts.writeGlamVault() : vaultAccounts.readGlamVault();
-    case "glam_signer" -> accountConfig.createFeePayerAccount();
-    case "cpi_program" -> accountConfig.createReadCpiProgram();
-    default -> throw new IllegalStateException("Unknown dynamic account type: " + accountConfig.name());
-  };
-```
-
-The following iterates over each mapping configuration file in a given directory.
-Constructs the corresponding program proxy for each and puts them in a map with the key being the source CPI program. 
-Then finally the TransactionMapper is constructed. 
+## Usage
 
 ```java
-// Used to de-duplicate AccountMeta objects.
-var accountMetaCache = new HashMap<AccountMeta, AccountMeta>(256);
-var indexedAccountMetaCache = new HashMap<IndexedAccountMeta, IndexedAccountMeta>(256);
+// Every document of one environment, one file per source program.
+var documents = MappingDocuments.readDirectory(Path.of("mapping/production"));
+var mapper = InstructionMapper.createMapper(documents);
 
-var proxyProgram = PublicKey.fromBase58Encoded("");
-var invokedProxyProgram = AccountMeta.createInvoked(proxyProgram);
-Function<DynamicAccountConfig, DynamicAccount<A>> dynamicAccountFactory = null; // See example above.
+// What a mapping needs from the caller: the vault's GLAM accounts. The mapper derives no
+// address; the integration authority of a proxy program is supplied by the caller too.
+var context = new MappingContext(glamState, glamVault, glamSigner, proxyProgram -> authorities.get(proxyProgram));
 
-var programKeyToProgramProxyMap = new HashMap<PublicKey, ProgramProxy<A>>();
-
-var mappingFileDirectory = Path.of("path/to/mapping/config/files");
-try (final var paths = Files.walk(mappingFileDirectory, 1)) {
-  paths
-      .filter(Files::isRegularFile)
-      .filter(Files::isReadable)
-      .filter(f -> f.getFileName().toString().endsWith(".json"))
-      .forEach(mappingFile -> ProgramMapConfig.createProxies(
-          mappingFile,
-          invokedProxyProgram,
-          programKeyToProgramProxyMap,
-          dynamicAccountFactory,
-          accountMetaCache,
-          indexedAccountMetaCache
-      ));
-  
-  var txMapper = TransactionMapper.createMapper(invokedProxyProgram, programProxies);
+// One instruction: throws nothing of its own, every outcome is a result (an Error from the
+// integration-authority lookup propagates).
+switch (mapper.map(instruction, context)) {
+  case MapResult.Mapped mapped -> send(mapped.instruction());
+  case MapResult.Passthrough passthrough -> send(passthrough.instruction()); // GLAM does not proxy it
+  case MapResult.Unsupported unsupported -> log(unsupported.reason(), unsupported.message());
 }
+
+// A whole transaction: every instruction is mapped first, then the mapped ones are
+// replaced in place over the fee payer, the recent blockhash, the table objects the
+// transaction holds and (for a v1 transaction) its version and settings; the rebuild is
+// unsigned, and when nothing mapped the caller's own object comes back. Throws
+// UnsupportedInstructionException at the first refusal, naming its position, and sava's
+// own exception for a transaction the mapped instructions cannot form (for example a v1
+// transaction pushed past 64 accounts; each replacement is checked, so a form at or near
+// a limit can be refused on the way).
+var mappedTransaction = mapper.mapTransaction(transaction, context);
 ```
 
-### Example Usage
+A `MapResult.Mapped` carries the proxy instruction, the source entry's name and the handler's
+name; a `Passthrough` the caller's own `Instruction` object and the reason; an `Unsupported`
+the [`UnsupportedReason`](ix-proxy/src/main/java/systems/glam/ix/proxy/UnsupportedReason.java)
+and a message that names the account or rule that refused it. An instruction that cannot be
+read at all (a data span outside its buffer, an account a transaction left unresolved) is an
+`Unsupported` result too, never an exception, whether or not its program has a document.
 
-```java 
-// Given some instructions or a transaction from any source.
-var sourceInstructions = List.<Instruction>of();
-var feePayer = AccountMeta.createFeePayer(PublicKey.fromBase58Encoded(""));
-A runtimeAccounts = null; // See example above.
+## Mapping documents
 
-Instruction[] mappedInstructions = txMapper.mapInstructions(
-    feePayer, 
-    runtimeAccounts,
-    sourceInstructions
-);
-```
+A document names its environment, its source program and its proxy program, and lists the
+source program's instructions with a **disposition** each:
 
-## Program Mapping Configuration Files
+- `map`: the proxy program has a handler; `handler` names it, `source_accounts` describes the
+  native instruction's account list (flags, optionals, expectations), `destination_accounts`
+  the handler's seats, each dynamic (a GLAM account the context supplies), static (a fixed
+  address) or forwarded from a source position, and `remaining_accounts` says whether
+  accounts beyond the list may ride along;
+- `passthrough`: the instruction is sent as it is, with the reason;
+- `unsupported`: GLAM refuses it, with the reason.
 
-Mapping files define the necessary information for translating a source program instruction that will be called via CPI
-from the destination proxy program.  More example configurations can be found in the [ix-mapper-ts repository](https://github.com/glamsystems/ix-mapper-ts/tree/e067fb4c01987e25bde5473ec368a62191a758e7/mapping-configs-v1) at the commit [downloadMappings.sh](downloadMappings.sh) pins
+The parser ([`MappingDocumentParser`](ix-proxy/src/main/java/systems/glam/ix/proxy/MappingDocumentParser.java))
+admits only JSON text (RFC 8259 in well-formed UTF-8, surrogate escapes paired, nesting at
+most 64 deep, nothing after the document) holding a well-formed document:
+unknown fields, a field named twice, a discriminator that is a prefix of another's, a seat
+that forwards a position read-only which the native instruction declares writable, and every
+other shape the rules forbid are refused at load time with a message that names the field.
+Numbers are binary64 values, as JavaScript reads them (`1.0` is the integer 1); positions,
+seats and bytes must fit an int. The cases under `test/data/cases` of the ix-mapper-ts package
+are the document contract's tests, and this library runs every one of them; what this parser
+refuses beyond them is listed on the tracking issue, not in the code.
 
-### Example Configuration
-
-```json
-{
-  "program_id": "dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH",
-  "instructions": [
-    {
-      "src_ix_name": "cancel_orders",
-      "src_discriminator": [
-        238,
-        225,
-        95,
-        158,
-        227,
-        103,
-        8,
-        194
-      ],
-      "dst_ix_name": "drift_cancel_orders",
-      "dst_discriminator": [
-        98,
-        107,
-        48,
-        79,
-        97,
-        60,
-        99,
-        58
-      ],
-      "dynamic_accounts": [
-        {
-          "name": "glam_state",
-          "index": 0,
-          "writable": false,
-          "signer": false
-        },
-        {
-          "name": "glam_vault",
-          "index": 1,
-          "writable": false,
-          "signer": false
-        },
-        {
-          "name": "glam_signer",
-          "index": 2,
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "cpi_program",
-          "index": 3,
-          "writable": false,
-          "signer": false
-        }
-      ],
-      "static_accounts": [],
-      "index_map": [
-        4,
-        5,
-        -1
-      ]
-    }
-  ]
-}
-```
-
-### **src_discriminator**
-
-The discriminator of the original instruction.
-
-### **dst_discriminator**
-
-The discriminator of the proxy instruction.
-
-### **dynamic_accounts**
-
-Account Meta information for accounts which can differ at runtime.
-
-### **static_accounts**
-
-Account Meta information for accounts which are always the same given a Solana cluster such as mainnet.
-
-### **index_map**
-
-Defines the parameter index for the destination instruction. If the account has been removed or replaced use a negative
-number.
-
-## Build & Tests
+## Build & tests
 
 ```shell
 ./gradlew check
 ```
 
-Mapping configuration files from the [ix-mapper-ts repository](https://github.com/glamsystems/ix-mapper-ts), at the
-commit [./downloadMappings.sh](downloadMappings.sh) pins, are needed to run the tests. The build materializes them
-under the untracked `glam/` directory automatically when it is missing; `./syncMappings.sh <sha>` moves the pin.
-
-### Sync Re-mapping JSON Files
+The tests read the generated documents and the conformance cases from the tracked
+[`ix-mapper-ts/`](ix-mapper-ts/README.md) directory, in the layout of the GLAM monorepo's
+`packages/glam/ix-mapper-ts` package: the monorepo's public-sync workflow writes it (the same
+workflow publishes the package to the
+[ix-mapper-ts repository](https://github.com/glamsystems/ix-mapper-ts)); the first copy was
+made by hand from that repository at 16320bf. An upstream change is tested here once its
+sync lands. To run the suite against a local checkout of the package before that:
 
 ```shell
-./syncMappings.sh
+./gradlew check -PglamMappingsDir=/absolute/path/to/ix-mapper-ts
 ```
+
+The path is resolved against the repository root; the mapping content is a test input, so a
+changed tree re-runs the suite rather than serving a cached result.
 
 ## Hardening
 
-The `ix-proxy` module registers the PIT mutation suite `pitestIxProxy` and the Jazzer fuzz targets `fuzzMappingConfig` and `fuzzIxMapper`
-via sava-build's hardening feature; unkilled mutants are ratcheted against the accepted baseline in
-[ix-proxy/config/pitest](ix-proxy/config/pitest). See [AGENTS.md](AGENTS.md) for the process contract.
+The `ix-proxy` module registers the PIT mutation suite `pitestIxProxy` and the Jazzer fuzz
+targets `fuzzMappingConfig` (the document parser over arbitrary bytes) and `fuzzIxMapper`
+(the mapper over arbitrary instructions) via sava-build's hardening feature; unkilled mutants
+are ratcheted against the accepted baseline in [ix-proxy/config/pitest](ix-proxy/config/pitest).
+See [AGENTS.md](AGENTS.md) for the process contract.
