@@ -3,12 +3,5 @@ plugins {
 }
 
 dependencies {
-  nmcpAggregation(project(":ix-proxy"))
-}
-
-tasks.register("publishToGitHubPackages") {
-  group = "publishing"
-  dependsOn(
-    ":ix-proxy:publishMavenJavaPublicationToSavaGithubPackagesPublishRepository"
-  )
+  centralPortalAggregation(project(":ix-proxy"))
 }
