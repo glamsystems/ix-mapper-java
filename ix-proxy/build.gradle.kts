@@ -17,7 +17,7 @@ testModuleInfo {
 // mappings root holding the same mapping-configs-v1/ and
 // mapping-configs-v1-staging/ layout — the seam that lets regenerated configs
 // face this validation before they are published upstream.
-val downloadMappings by tasks.registering(Exec::class) {
+val downloadMappings = tasks.register<Exec>("downloadMappings") {
   description = "Materializes the pinned ix-mapper-ts mapping configs under the untracked glam/ directory."
   val mappingsOverride = providers.gradleProperty("glamMappingsDir")
   workingDir = rootDir
