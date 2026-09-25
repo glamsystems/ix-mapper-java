@@ -1,9 +1,9 @@
-# ixProxy [![Gradle Check](https://github.com/glamsystems/ix-proxy/actions/workflows/build.yml/badge.svg)](https://github.com/glamsystems/ix-proxy/actions/workflows/build.yml) [![Publish Release](https://github.com/glamsystems/ix-proxy/actions/workflows/publish.yml/badge.svg)](https://github.com/glamsystems/ix-proxy/actions/workflows/publish.yml)
+# ixProxy [![Gradle Check](https://github.com/glamsystems/ix-mapper-java/actions/workflows/build.yml/badge.svg)](https://github.com/glamsystems/ix-mapper-java/actions/workflows/build.yml) [![Publish Release](https://github.com/glamsystems/ix-mapper-java/actions/workflows/publish-gh.yml/badge.svg)](https://github.com/glamsystems/ix-mapper-java/actions/workflows/publish-gh.yml)
 
 Facilitates the re-mapping of instructions from one program to another proxy program. The primary use case is to add
 additional safety checks in the proxy program before and after forwarding the request to the original program.
 
-## [Transaction Mapper](https://github.com/glamsystems/ix-proxy/blob/main/ix-proxy/src/main/java/systems/glam/ix/proxy/TransactionMapper.java)
+## [Transaction Mapper](https://github.com/glamsystems/ix-mapper-java/blob/main/ix-proxy/src/main/java/systems/glam/ix/proxy/TransactionMapper.java)
 
 The transaction mapper can be used to map a list of instructions or entire transactions.
 
