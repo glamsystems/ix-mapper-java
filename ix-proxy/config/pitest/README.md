@@ -1,11 +1,11 @@
 # Mutation-testing triage record
 
 The `ixProxy` accepted baseline holds the five unkilled rows of the document mapper (1089
-mutants, 1084 killed on the recorded run, under PIT 1.25.9), each with a family label
-whose equivalence argument is below; the timeout audit has no members. The installed
-sava-build version's `hardeningHelp`, generated agent template, and `HARDENING.md` are
-authoritative for task and record semantics. Use its named writer tasks for record
-changes; never hand-edit record structure or provenance stamps.
+mutants, 1084 killed on the recorded run, under PIT 1.25.9 and again under 1.30.0), each
+with a family label whose equivalence argument is below; the timeout audit has no members.
+The installed sava-build version's `hardeningHelp`, generated agent template, and
+`HARDENING.md` are authoritative for task and record semantics. Use its named writer tasks
+for record changes; never hand-edit record structure or provenance stamps.
 
 ## Triage history
 
@@ -39,6 +39,11 @@ changes; never hand-edit record structure or provenance stamps.
   receiver row joined the same family through `pitestIxProxyBaselineUnion`. The recorded
   run: 2026-09-24, PIT 1.25.9, full scope, history-free (`-PnoMutationHistory`), the
   mappings root the tracked `ix-mapper-ts/` directory (copied from ix-mapper-ts 16320bf).
+- **PIT 1.25.9 to 1.30.0, 2026-09-24** (sava-build 21.6.1 on `main`): a history-free
+  observation under the new PIT reproduced the recorded population, 1089 mutants with 1084
+  killed, the five accepted keys (`DocumentBuilder.test`, `validateShape` and `plainNumber`
+  in the parser, the two `readDirectory` receivers) the only survivors and no timeout, so
+  `pitestIxProxyBaselineRebase` moved the version and toolchain stamps and changed no row.
 
 ## Timed-out mutants (audited set)
 
