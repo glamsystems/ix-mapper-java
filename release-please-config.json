@@ -6,7 +6,10 @@
   "versioning": "always-bump-patch",
   "packages": {
     ".": {
-      "package-name": "ix-proxy"
+      "package-name": "ix-proxy",
+      "exclude-paths": [
+        "ix-mapper-ts"
+      ]
     }
   }
 }
