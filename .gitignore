@@ -1,60 +1,46 @@
-# Gradle specific
-.gradle
-.kotlin
+# Everything is ignored unless it is unblocked below, so a new top-level file or
+# directory stays out of git until it is listed here.
+/*
+
+# Repository documents and release metadata
+!/.gitignore
+!/.github/
+!/.release-please-manifest.json
+!/AGENTS.md
+!/CHANGELOG.md
+!/LICENSE
+!/README.md
+!/release-please-config.json
+
+# Gradle build and wrapper
+!/gradle/
+!/gradle.properties
+!/gradlew
+!/gradlew.bat
+!/settings.gradle.kts
+
+# The mapping documents and conformance cases the monorepo's sync workflow writes
+!/ix-mapper-ts/
+
+# The library module: its build script, hardening records and sources, but none of
+# what a build or a fuzz run leaves beside them (build/, out/, .pitest-history/,
+# Jazzer crash files)
+!/ix-proxy/
+/ix-proxy/*
+!/ix-proxy/build.gradle.kts
+!/ix-proxy/config/
+!/ix-proxy/src/
+
+# Never tracked, wherever it turns up inside an unblocked directory (*.tmp covers the
+# hardening plugin's *.csv.tmp baseline-write temp)
 build/
-!gradle/wrapper/gradle-wrapper.properties
-
-# IDE specific (IntelliJ IDEA)
-.idea/
-*.iws
-*.iml
-*.ipr
 out/
-
-# Java specific
-*.class
-*.log
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# Compiled class files
-bin/
-
-# Package Files
-dist/
-
-# Mac OS specific
+.gradle/
+.kotlin/
+.idea/
+*.iml
 .DS_Store
-
-# Temporary files
 *.tmp
-*.bak
 *.swp
+*.bak
 *~
-
-# Local configuration
-local.properties
-
-# Debug logs
-hs_err_pid*
-
-# Project specific build output
-target/
-
-!gradle-wrapper.jar
-
-# the download the pull-by-pin build made before the documents were tracked; delete it
-/glam
-/symlinks/
-/.junie/
-
-# arcmutate incremental-analysis history (machine-local, written by the hardening plugin)
-.pitest-history/
-
-# atomic baseline-write temp; a kill in the write window can leave one behind
-*.csv.tmp
