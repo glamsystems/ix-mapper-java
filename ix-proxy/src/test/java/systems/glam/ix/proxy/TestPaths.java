@@ -28,4 +28,10 @@ final class TestPaths {
   static Path cases() {
     return mappingsRoot().resolve("test").resolve("data").resolve("cases");
   }
+
+  /// The mapping vectors, `test/data/vectors/<environment>/<program>.json`: one file of
+  /// many cases per bundled document, the TypeScript mapper's own output over every entry.
+  static Path vectors() {
+    return mappingsRoot().resolve("test").resolve("data").resolve("vectors");
+  }
 }

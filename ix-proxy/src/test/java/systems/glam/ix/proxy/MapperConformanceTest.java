@@ -21,11 +21,15 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /// The conformance set every mapper of the document passes: the cases under
 /// `test/data/cases` of the TypeScript package, each an instruction, a context and the result
 /// the rules give for it, compared whole, message included. A case names its own documents or
-/// an environment whose generated documents it maps against.
+/// an environment whose generated documents it maps against. The vectors under
+/// `test/data/vectors` run the same way: generated from every entry of every bundled document
+/// by the TypeScript mapper, they hold this mapper to that one's output on every entry, and
+/// prove agreement, not correctness; the cases are the contract.
 final class MapperConformanceTest {
 
   /// The oracle names an integration authority by the proxy program it belongs to, exactly as
@@ -202,34 +206,56 @@ final class MapperConformanceTest {
     return InstructionMapper.createMapper(MappingDocuments.readDirectory(TestPaths.documents((String) environment)));
   }
 
-  @TestFactory
-  Stream<DynamicTest> theMappingCases() {
-    final List<Path> files;
-    try (final var paths = Files.list(TestPaths.cases())) {
-      files = paths
+  private static List<Path> jsonFiles(final Path dir) {
+    try (final var paths = Files.list(dir)) {
+      return paths
           .filter(path -> path.getFileName().toString().endsWith(".json"))
           .sorted(Comparator.comparing(path -> path.getFileName().toString()))
           .toList();
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
+  }
+
+  private static Object readJson(final Path file) {
+    try {
+      return Json.read(Files.readAllBytes(file));
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  @TestFactory
+  Stream<DynamicTest> theMappingCases() {
+    final var files = jsonFiles(TestPaths.cases());
     assertFalse(files.isEmpty(), "no cases under " + TestPaths.cases());
-    return files.stream().map(file -> {
-      final Map<String, Object> testCase;
-      try {
-        testCase = Json.object(Json.read(Files.readAllBytes(file)));
-      } catch (final IOException e) {
-        throw new UncheckedIOException(e);
-      }
+    return files.stream().map(file -> test(Json.object(readJson(file)), file.getFileName().toString()));
+  }
+
+  /// The vectors arrive with the monorepo's sync; until the first sync that carries them, the
+  /// tracked tree has no vectors directory and this factory is skipped, not failed. A
+  /// directory that is there but empty fails: a sync that dropped them is a defect.
+  @TestFactory
+  Stream<DynamicTest> theMappingVectors() {
+    assumeTrue(Files.isDirectory(TestPaths.vectors()), "no vectors synced under " + TestPaths.vectors());
+    final var environments = jsonFiles(TestPaths.vectors().resolve("production")).size()
+        + jsonFiles(TestPaths.vectors().resolve("staging")).size();
+    assertFalse(environments == 0, "no vectors under " + TestPaths.vectors());
+    return Stream.of("production", "staging")
+        .flatMap(environment -> jsonFiles(TestPaths.vectors().resolve(environment)).stream())
+        .flatMap(file -> Json.array(readJson(file)).stream()
+            .map(vector -> test(Json.object(vector), file.getFileName().toString())));
+  }
+
+  private static DynamicTest test(final Map<String, Object> testCase, final String fileName) {
       return DynamicTest.dynamicTest(testCase.get("name") + ": " + testCase.get("note"), () -> {
         final var mapper = mapperFor(testCase);
         final var instruction = toInstruction(Json.object(testCase.get("instruction")));
         final var context = Json.object(testCase.get("context"));
         final var asked = new ArrayList<SuppliedAccountsRequest>();
         final var result = mapper.map(instruction, toContext(context, asked));
-        assertEquals(testCase.get("expected"), toComparable(result), file.getFileName().toString());
+        assertEquals(testCase.get("expected"), toComparable(result), fileName);
         assertRequests(context, instruction, asked);
       });
-    });
   }
 }

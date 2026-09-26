@@ -20,7 +20,7 @@ testModuleInfo {
 // The mapping content is a test input: a synced change or a regenerated override tree must
 // re-run the suite rather than serve a cached result.
 val mappingsRoot: File = providers.gradleProperty("glamMappingsDir").map { rootProject.file(it) }.getOrElse(rootDir.resolve("ix-mapper-ts"))
-val mappingsInputs = fileTree(mappingsRoot) { include("src/generated/mapping/**", "test/data/cases/**") }
+val mappingsInputs = fileTree(mappingsRoot) { include("src/generated/mapping/**", "test/data/cases/**", "test/data/vectors/**") }
 
 tasks.withType<Test>().configureEach {
   inputs.files(mappingsInputs).withPropertyName("glamMappings").withPathSensitivity(PathSensitivity.RELATIVE)
