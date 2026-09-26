@@ -135,6 +135,28 @@ final class MappingDocumentParserTests {
   }
 
   @Test
+  void admitsSuppliedAccountsAndReadsTheirDefaults() {
+    final var document = valid();
+    // without the seat a client may leave out, and its position
+    Json.array(entry(document, 0).get("destination_accounts")).removeLast();
+    Json.array(entry(document, 0).get("source_accounts")).removeLast();
+    entry(document, 0).put("supplied_accounts", list(
+        map("role", "asset_oracle", "of", list(1L)),
+        map("role", "asset_oracle", "of", list(0L, 1L)),
+        map("role", "sol_usd_oracle", "optional", true)
+    ));
+    final var mapped = (InstructionEntry.Mapped) parse(document).instructions().getFirst();
+    assertEquals(List.of(
+        new SuppliedAccount("asset_oracle", List.of(1), false),
+        new SuppliedAccount("asset_oracle", List.of(0, 1), false),
+        new SuppliedAccount("sol_usd_oracle", List.of(), true)
+    ), mapped.suppliedAccounts());
+    // absent, the field is an empty list; the same position may serve two roles
+    final var plain = (InstructionEntry.Mapped) parse(valid()).instructions().getFirst();
+    assertEquals(List.of(), plain.suppliedAccounts());
+  }
+
+  @Test
   void aDocumentThatIsNotAnObjectIsRefused() {
     final var e = assertThrows(MappingDocumentException.class, () -> MappingDocumentParser.parse("[]", "documents[0]"));
     assertEquals("documents[0]: must be an object", e.getMessage());
@@ -380,7 +402,35 @@ final class MappingDocumentParserTests {
       new Refusal("an address of 45 alphabet characters", d -> d.put("program_id", "1".repeat(45)), "program_id is not an address"),
       new Refusal("an address of 31 alphabet characters", d -> d.put("program_id", "1".repeat(31)), "program_id is not an address"),
       // a revision is a long
-      new Refusal("a config revision beyond the long range", d -> provenance(d).put("config_revision", 1e300), "config_revision must be a non-negative integer")
+      new Refusal("a config revision beyond the long range", d -> provenance(d).put("config_revision", 1e300), "config_revision must be a non-negative integer"),
+      new Refusal("supplied accounts on a passthrough", d -> entry(d, 1).put("supplied_accounts", list()), "a passthrough entry carries no \"supplied_accounts\""),
+      new Refusal("supplied accounts on an unsupported entry", d -> entry(d, 2).put("supplied_accounts", list()), "a unsupported entry carries no \"supplied_accounts\""),
+      new Refusal("supplied accounts that are not an array", d -> entry(d, 0).put("supplied_accounts", 5L), "supplied_accounts must be an array"),
+      new Refusal("a supplied account that is not an object", d -> entry(d, 0).put("supplied_accounts", list(5L)), "supplied_accounts[0]: must be an object"),
+      new Refusal("a null supplied account", d -> entry(d, 0).put("supplied_accounts", list((Object) null)), "supplied_accounts[0]: must be an object"),
+      new Refusal("a supplied account without a role", d -> entry(d, 0).put("supplied_accounts", list(map("of", list(1L)))), "supplied_accounts[0]: role must be a non-blank string"),
+      new Refusal("a supplied account with a blank role", d -> entry(d, 0).put("supplied_accounts", list(map("role", " "))), "role must be a non-blank string"),
+      new Refusal("a supplied account with a role that is not a string", d -> entry(d, 0).put("supplied_accounts", list(map("role", 5L))), "role must be a non-blank string"),
+      new Refusal("a supplied account with an unknown field", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "x", 1L))), "unknown field \"x\""),
+      new Refusal("a supplied account with two unknown fields", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "aaa", 1L, "bbb", 2L))), "unknown field \"aaa\""),
+      new Refusal("a supplied account whose of is not an array", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", 5L))), "of must be an array"),
+      new Refusal("a supplied account whose of holds a string", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list("x")))), "of[0] must be a non-negative integer"),
+      new Refusal("a supplied account whose of holds a negative", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list(-1L)))), "of[0] must be a non-negative integer"),
+      new Refusal("a supplied account whose of holds a fraction", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list(1.5)))), "of[0] must be a non-negative integer"),
+      new Refusal("a second bad of position", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list(1L, "x")))), "of[1] must be a non-negative integer"),
+      new Refusal("a supplied account naming a position out of range", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list(9L)))), "supplied_accounts[0] names source position 9, which is out of range of 4"),
+      new Refusal("a supplied account naming the position just past the list", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list(4L)))), "supplied_accounts[0] names source position 4, which is out of range of 4"),
+      new Refusal("a second supplied account without a role", d -> entry(d, 0).put("supplied_accounts", list(map("role", "a"), map("of", list(1L)))), "supplied_accounts[1]: role must be a non-blank string"),
+      new Refusal("two bad of positions name the first", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list("x", "y")))), "of[0] must be a non-negative integer"),
+      new Refusal("a supplied account whose optional is the string true", d -> entry(d, 0).put("supplied_accounts", list(map("role", "a", "optional", "true"))), "optional must be true when present"),
+      new Refusal("a supplied account naming an omittable position", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list(3L)))), "supplied_accounts[0] names source position 3, which a client may leave out; an absent run would shift it"),
+      new Refusal("a supplied account naming a position a client may pass as the program id", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list(2L)))), "supplied_accounts[0] names source position 2, which a client may pass as the program id; an absent optional names no account"),
+      new Refusal("a supplied account whose of is past a Java int", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r", "of", list(2147483648L)))), "of[0] must be a non-negative integer"),
+      new Refusal("a bad element ahead of a shape fault: the element is named first", d -> entry(d, 0).put("supplied_accounts", list(map("role", "a", "optional", true), map("role", "b", "of", list("x")))), "supplied_accounts[1]: of[0] must be a non-negative integer"),
+      new Refusal("a required supplied account after an optional one", d -> entry(d, 0).put("supplied_accounts", list(map("role", "a", "optional", true), map("role", "b"))), "supplied_accounts[1] is required after an optional one; optional accounts trail"),
+      new Refusal("supplied accounts on an entry with a seat a client may leave out", d -> entry(d, 0).put("supplied_accounts", list(map("role", "r"))), "supplied_accounts follow seat 4, which a client may leave out; an absent one would shift them"),
+      new Refusal("a supplied account whose optional is false", d -> entry(d, 0).put("supplied_accounts", list(map("role", "a", "optional", false))), "optional must be true when present"),
+      new Refusal("a supplied account whose optional is not a boolean", d -> entry(d, 0).put("supplied_accounts", list(map("role", "a", "optional", "yes"))), "optional must be true when present")
   );
 
   @TestFactory
@@ -413,6 +463,9 @@ final class MappingDocumentParserTests {
       new TextRefusal("a duplicate top-level field", t -> t.replace("\"environment\":\"test\"", "\"environment\":\"test\",\"environment\":\"x\""), "duplicate field \"environment\""),
       new TextRefusal("a duplicate provenance field", t -> t.replace("\"generator\":\"g\"", "\"generator\":\"g\",\"generator\":\"h\""), "duplicate field \"generator\""),
       new TextRefusal("a duplicate entry field", t -> t.replace("\"name\":\"read\"", "\"name\":\"read\",\"name\":\"read\""), "duplicate field \"name\""),
+      new TextRefusal("two duplicate supplied-account fields name the first", t -> t.replace("\"remaining_accounts\":{\"kind\":\"any\"}", "\"remaining_accounts\":{\"kind\":\"any\"},\"supplied_accounts\":[{\"role\":\"r\",\"role\":\"s\",\"of\":[],\"of\":[]}]"), "duplicate field \"role\""),
+      new TextRefusal("a duplicate supplied-account field", t -> t.replace("\"remaining_accounts\":{\"kind\":\"any\"}", "\"remaining_accounts\":{\"kind\":\"any\"},\"supplied_accounts\":[{\"role\":\"r\",\"role\":\"s\"}]"), "duplicate field \"role\""),
+      new TextRefusal("a malformed second supplied account after a valid one", t -> t.replace("\"remaining_accounts\":{\"kind\":\"any\"}", "\"remaining_accounts\":{\"kind\":\"any\"},\"supplied_accounts\":[{\"role\":\"r\"},{\"role\":\"s\",\"of\":[\"x\"]}]"), "supplied_accounts[1]: of[0] must be a non-negative integer"),
       new TextRefusal("a malformed second source_accounts after a valid one", t -> t.replace(",\"destination_accounts\":", ",\"source_accounts\":5,\"destination_accounts\":"), "duplicate field \"source_accounts\""),
       new TextRefusal("a duplicate handler field", t -> t.replace("\"name\":\"proxy_do\"", "\"name\":\"proxy_do\",\"name\":\"proxy_do\""), "duplicate field \"name\""),
       new TextRefusal("a duplicate source account field", t -> t.replace("\"name\":\"thing\"", "\"name\":\"thing\",\"writable\":true"), "duplicate field \"writable\""),

@@ -20,6 +20,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /// The conformance set every mapper of the document passes: the cases under
 /// `test/data/cases` of the TypeScript package, each an instruction, a context and the result
@@ -55,16 +56,81 @@ final class MapperConformanceTest {
     return Instruction.createInstruction(program, accounts, data);
   }
 
-  static MappingContext toContext(final Map<String, Object> value) {
+  /// The context a case describes. Its supplier serves the entries the case spells out, each
+  /// with the request the mapper must make for it (see [#assertRequests]) and what the
+  /// supplier does: answers with a list (a null element kept) or null, or throws with a
+  /// message. Every request made lands in `asked`.
+  static MappingContext toContext(final Map<String, Object> value, final List<SuppliedAccountsRequest> asked) {
     final Function<PublicKey, PublicKey> authority = Boolean.TRUE.equals(value.get("integrationAuthority"))
         ? MapperConformanceTest::authorityOf
         : null;
+    final var suppliedRaw = value.get("suppliedAccounts");
+    final Function<SuppliedAccountsRequest, List<PublicKey>> supplied;
+    if (suppliedRaw == null) {
+      supplied = null;
+    } else {
+      final var byEntry = Json.object(suppliedRaw);
+      supplied = request -> {
+        asked.add(request);
+        final var spec = byEntry.get(request.source());
+        if (spec == null) {
+          return null;
+        }
+        final var throwsMessage = Json.object(spec).get("throws");
+        if (throwsMessage != null) {
+          throw new IllegalStateException((String) throwsMessage);
+        }
+        final var answer = Json.object(spec).get("answer");
+        if (answer == null) {
+          return null;
+        }
+        final var addresses = new ArrayList<PublicKey>();
+        for (final var element : Json.array(answer)) {
+          addresses.add(element == null ? null : PublicKey.fromBase58Encoded((String) element));
+        }
+        return addresses;
+      };
+    }
     return new MappingContext(
         PublicKey.fromBase58Encoded((String) value.get("glamState")),
         PublicKey.fromBase58Encoded((String) value.get("glamVault")),
         PublicKey.fromBase58Encoded((String) value.get("glamSigner")),
-        authority
+        authority,
+        supplied
     );
+  }
+
+  /// The mapper asked once per entry the case serves, for the roles the case spells out with
+  /// the addresses at their `of` positions, and handed the supplier the instruction itself.
+  static void assertRequests(final Map<String, Object> value,
+                             final Instruction instruction,
+                             final List<SuppliedAccountsRequest> asked) {
+    final var suppliedRaw = value.get("suppliedAccounts");
+    if (suppliedRaw == null) {
+      return;
+    }
+    for (final var entry : Json.object(suppliedRaw).entrySet()) {
+      final var requests = asked.stream().filter(request -> request.source().equals(entry.getKey())).toList();
+      assertEquals(1, requests.size(), entry.getKey() + " is asked once");
+      final var request = requests.getFirst();
+      assertSame(instruction, request.instruction());
+      final var expected = Json.object(Json.object(entry.getValue()).get("request"));
+      assertEquals(PublicKey.fromBase58Encoded((String) expected.get("proxyProgram")), request.proxyProgram());
+      assertEquals(PublicKey.fromBase58Encoded((String) expected.get("program")), request.program());
+      assertEquals(expected.get("handler"), request.handler());
+      final var roles = new ArrayList<SuppliedAccountsRequest.Role>();
+      for (final var element : Json.array(expected.get("roles"))) {
+        final var role = Json.object(element);
+        final var of = new ArrayList<PublicKey>();
+        for (final var address : Json.array(role.get("of"))) {
+          of.add(PublicKey.fromBase58Encoded((String) address));
+        }
+        roles.add(new SuppliedAccountsRequest.Role((String) role.get("role"), of, (Boolean) role.get("optional")));
+      }
+      assertEquals(roles, request.roles());
+    }
+    // and nothing else was asked: an entry without supplied accounts leaves the supplier alone
+    assertEquals(Json.object(suppliedRaw).size(), asked.size(), "every ask is declared");
   }
 
   /// A result as a JSON tree in the TypeScript suite's comparable shape: absent fields are
@@ -157,11 +223,12 @@ final class MapperConformanceTest {
       }
       return DynamicTest.dynamicTest(testCase.get("name") + ": " + testCase.get("note"), () -> {
         final var mapper = mapperFor(testCase);
-        final var result = mapper.map(
-            toInstruction(Json.object(testCase.get("instruction"))),
-            toContext(Json.object(testCase.get("context")))
-        );
+        final var instruction = toInstruction(Json.object(testCase.get("instruction")));
+        final var context = Json.object(testCase.get("context"));
+        final var asked = new ArrayList<SuppliedAccountsRequest>();
+        final var result = mapper.map(instruction, toContext(context, asked));
         assertEquals(testCase.get("expected"), toComparable(result), file.getFileName().toString());
+        assertRequests(context, instruction, asked);
       });
     });
   }

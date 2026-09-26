@@ -28,10 +28,11 @@ are the contract both must pass. `glam-sdk-java` is the primary consumer.
 - `ix-proxy/` (JPMS module `systems.glam.ix_proxy`, package
   `systems.glam.ix.proxy`) — the whole library. The document model (sealed
   `InstructionEntry`, `DestinationAccount`, `Expectation`; records
-  `MappingDocument`, `SourceAccount`, `Handler`, `Provenance`), the parser
-  (`MappingDocumentParser`, `MappingDocuments` for files), the mapper
-  (`InstructionMapper` over `DocumentMapper`, `MappingContext`, sealed
-  `MapResult`, `UnsupportedReason`, `UnsupportedInstructionException`) and
+  `MappingDocument`, `SourceAccount`, `SuppliedAccount`, `Handler`,
+  `Provenance`), the parser (`MappingDocumentParser`, `MappingDocuments` for
+  files), the mapper (`InstructionMapper` over `DocumentMapper`,
+  `MappingContext`, `SuppliedAccountsRequest`, sealed `MapResult`,
+  `UnsupportedReason`, `UnsupportedInstructionException`) and
   `MappingDocumentException` for a document that does not admit.
 - `ix-mapper-ts/` — the generated documents
   (`src/generated/mapping/{production,staging}`) and the conformance cases

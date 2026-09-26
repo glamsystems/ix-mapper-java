@@ -12,9 +12,10 @@ package systems.glam.ix.proxy;
 /// hang). Jazzer flags what the contract forbids: any other throwable, hangs (deeply nested
 /// JSON, huge literals) and memory exhaustion.
 ///
-/// Seeded from real documents under src/test/resources/fuzz/mappingConfig; the nested
-/// entry/seat structure is unreachable from scratch, so a mutator only makes progress from a
-/// real seed.
+/// Seeded from real documents and hand-written ones under
+/// src/test/resources/fuzz/mappingConfig; the nested entry/seat structure is unreachable from
+/// scratch, so a mutator only makes progress from a seed. Each seed's outcome is pinned by
+/// `MappingConfigFuzzSeedsTests`.
 ///
 /// Deliberately free of Jazzer imports so it compiles with the regular test sources.
 ///

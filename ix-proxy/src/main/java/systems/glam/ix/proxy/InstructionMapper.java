@@ -15,7 +15,7 @@ import java.util.List;
 /// entry matches is refused. An instruction that cannot be read (a data span outside its
 /// buffer, an account a transaction left unresolved) is refused whatever its program.
 /// Mapping throws nothing of its own; every outcome is a [MapResult]. (An `Error` from the
-/// caller's integration-authority lookup propagates.)
+/// caller's integration-authority lookup or supplier propagates.)
 public interface InstructionMapper {
 
   /// Throws [MappingDocumentException] for a document that does not pass the checks a parsed
@@ -56,7 +56,7 @@ public interface InstructionMapper {
   ///
   /// The rebuild itself is sava's. A transaction the mapped instructions cannot form throws
   /// sava's own `IllegalStateException` or `IllegalArgumentException`, for example a v1
-  /// transaction pushed past 64 accounts by the seats a mapping adds, a heap size sava's
+  /// transaction pushed past 64 accounts by the seats and supplied accounts a mapping adds, a heap size sava's
   /// strict v1 builder refuses, or an instruction whose program is the fee payer. Each
   /// mapped instruction is replaced in its own rebuild, and sava checks every intermediate
   /// transaction, in which a source program and its proxy are both referenced until the

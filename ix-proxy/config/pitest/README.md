@@ -1,7 +1,10 @@
 # Mutation-testing triage record
 
-The `ixProxy` accepted baseline holds the five unkilled rows of the document mapper (1089
-mutants, 1084 killed on the recorded run, under PIT 1.25.9 and again under 1.30.0), each
+The `ixProxy` accepted baseline holds the five unkilled rows of the document mapper (1226
+mutants, 1221 killed on the recorded run: 2026-09-26, PIT 1.30.0, full scope, history-free,
+the mappings root `packages/glam/ix-mapper-ts` of the GLAM monorepo at a9b9ee9fd through
+`-PglamMappingsDir`; the record before the supplied accounts, 2026-09-24, was 1089 and 1084,
+under 1.25.9 and again under 1.30.0), each
 with a family label whose equivalence argument is below; the timeout audit has no members.
 The installed sava-build version's `hardeningHelp`, generated agent template, and
 `HARDENING.md` are authoritative for task and record semantics. Use its named writer tasks
@@ -36,14 +39,37 @@ for record changes; never hand-edit record structure or provenance stamps.
   alphabet, checked with a counting decoder handed to the package-private `decodeAddress`
   overload) killed the other three, pruned once the counting test was in. The directory
   reader now keys a `TreeMap` by file name, so its comparator row left and the key's
-  receiver row joined the same family through `pitestIxProxyBaselineUnion`. The recorded
-  run: 2026-09-24, PIT 1.25.9, full scope, history-free (`-PnoMutationHistory`), the
-  mappings root the tracked `ix-mapper-ts/` directory (copied from ix-mapper-ts 16320bf).
+  receiver row joined the same family through `pitestIxProxyBaselineUnion`. The run
+  recorded then: 2026-09-24, PIT 1.25.9, full scope, history-free (`-PnoMutationHistory`),
+  the mappings root the tracked `ix-mapper-ts/` directory (copied from ix-mapper-ts 16320bf).
 - **PIT 1.25.9 to 1.30.0, 2026-09-24** (sava-build 21.6.1 on `main`): a history-free
   observation under the new PIT reproduced the recorded population, 1089 mutants with 1084
   killed, the five accepted keys (`DocumentBuilder.test`, `validateShape` and `plainNumber`
   in the parser, the two `readDirectory` receivers) the only survivors and no timeout, so
   `pitestIxProxyBaselineRebase` moved the version and toolchain stamps and changed no row.
+- **Supplied accounts, 2026-09-25** (`SuppliedAccount`, `SuppliedAccountsRequest`, the
+  parser's `SuppliedBuilder` and `validateSupplied`, the mapper's insertion between the
+  seats and the accounts beyond the list, the `supplied_accounts` reason): the routine
+  `pitestIxProxy` run first showed thirteen unkilled mutants in the new code, eight
+  surviving and five uncovered (the interrupt relay and the `SuppliedBuilder` lambdas);
+  twelve were killed with tests (a second malformed element, the position just past the
+  list, two bad `of` positions naming the first, a duplicate field and two duplicate
+  fields in one supplied account, a sneaky interrupt from the supplier, the string
+  `"true"` for `optional`) and one capacity conditional removed from the parser rather
+  than argued; `pitestIxProxyBaselineRetag` refreshed the line tag of the one accepted row the
+  insertions shifted. The five accepted rows are unchanged. The review's seat rule (an
+  entry with a seat a client may leave out lists no supplied accounts) killed every
+  mutant of its own and moved three accepted rows, one by six lines and two by one;
+  `pitestIxProxyBaselineRetag` refreshed those tags, and no row changed. The second review
+  round (an `of` names no optional position, the answer read inside the guard) added five
+  mutants, all killed, and moved the same three rows again; retagged the same way. The
+  third round (runtime exceptions on the request records) and the fourth (blank as the
+  parser reads it, every mapped seed's account list pinned) changed no count. Recorded
+  run for this record: 2026-09-26, PIT 1.30.0, full scope, history-free
+  (`-PnoMutationHistory`), the mappings root the monorepo package at a9b9ee9fd through
+  `-PglamMappingsDir`; the same run over this repository's synced `ix-mapper-ts/` tree
+  (34 cases, none for supplied accounts) gives the same 1226 and 1221, every mutant with
+  the same status, so no row depends on the cases not yet synced.
 
 ## Timed-out mutants (audited set)
 

@@ -25,6 +25,8 @@ final class RecordsTests {
   private static final Handler HANDLER = new Handler("h", Discriminator.createDiscriminator(new byte[]{9}));
   private static final SourceAccount SOURCE = new SourceAccount("thing", true, false, false, null, null);
   private static final DestinationAccount SEAT = new DestinationAccount.Source(0, 0, true, false, false);
+  private static final software.sava.core.tx.Instruction INSTRUCTION =
+      software.sava.core.tx.Instruction.createInstruction(PROGRAM, List.of(), new byte[]{1});
 
   private static <T> List<T> withNull() {
     final var list = new ArrayList<T>();
@@ -54,6 +56,13 @@ final class RecordsTests {
       new Refusal("a null source account", () -> new InstructionEntry.Mapped("m", DISC, HANDLER, withNull(), List.of(), RemainingAccounts.ANY), "InstructionEntry.Mapped", "source_accounts holds a null element"),
       new Refusal("null destination accounts", () -> new InstructionEntry.Mapped("m", DISC, HANDLER, List.of(), null, RemainingAccounts.ANY), "InstructionEntry.Mapped", "destination_accounts is missing"),
       new Refusal("a null destination account", () -> new InstructionEntry.Mapped("m", DISC, HANDLER, List.of(), withNull(), RemainingAccounts.ANY), "InstructionEntry.Mapped", "destination_accounts holds a null element"),
+      new Refusal("null supplied accounts", () -> new InstructionEntry.Mapped("m", DISC, HANDLER, List.of(), List.of(), RemainingAccounts.ANY, null), "InstructionEntry.Mapped", "supplied_accounts is missing"),
+      new Refusal("a null supplied account", () -> new InstructionEntry.Mapped("m", DISC, HANDLER, List.of(), List.of(), RemainingAccounts.ANY, withNull()), "InstructionEntry.Mapped", "supplied_accounts holds a null element"),
+      new Refusal("a supplied account without a role", () -> new SuppliedAccount(null, List.of(), false), "SuppliedAccount", "role is missing or blank"),
+      new Refusal("a supplied account with a blank role", () -> new SuppliedAccount(" ", List.of(), false), "SuppliedAccount", "role is missing or blank"),
+      new Refusal("a supplied account with null positions", () -> new SuppliedAccount("r", null, false), "SuppliedAccount", "of is missing"),
+      new Refusal("a supplied account with a null position", () -> new SuppliedAccount("r", withNull(), false), "SuppliedAccount", "of holds a null element"),
+      new Refusal("a supplied account with a negative position", () -> new SuppliedAccount("r", List.of(-1), false), "SuppliedAccount", "of is negative"),
       new Refusal("no remaining-accounts rule", () -> new InstructionEntry.Mapped("m", DISC, HANDLER, List.of(), List.of(), null), "InstructionEntry.Mapped", "remaining_accounts is missing"),
 
       new Refusal("a passthrough without a name", () -> new InstructionEntry.Passthrough(null, DISC, "r"), "InstructionEntry.Passthrough", "name is missing or blank"),
@@ -87,6 +96,59 @@ final class RecordsTests {
       new Refusal("config_revision 0", () -> new Provenance("g", null, null, 0), "Provenance", "config_revision is not positive"),
       new Refusal("config_revision -1", () -> new Provenance("g", null, null, -1), "Provenance", "config_revision is not positive")
   );
+
+  /// The runtime request records are not part of the document model: a missing argument is a
+  /// `NullPointerException` naming it, a blank name an `IllegalArgumentException`, and a null
+  /// element what `List.copyOf` throws.
+  private record RuntimeRefusal(String what, Executable construct, Class<? extends RuntimeException> type, String message) {
+  }
+
+  private static final List<RuntimeRefusal> RUNTIME_REFUSALS = List.of(
+      new RuntimeRefusal("a request without a proxy program", () -> new SuppliedAccountsRequest(null, PROGRAM, "s", "h", List.of(), INSTRUCTION), NullPointerException.class, "proxyProgram"),
+      new RuntimeRefusal("a request without a program", () -> new SuppliedAccountsRequest(PROXY, null, "s", "h", List.of(), INSTRUCTION), NullPointerException.class, "program"),
+      new RuntimeRefusal("a request without a source", () -> new SuppliedAccountsRequest(PROXY, PROGRAM, null, "h", List.of(), INSTRUCTION), NullPointerException.class, "source"),
+      new RuntimeRefusal("a request with a blank source", () -> new SuppliedAccountsRequest(PROXY, PROGRAM, " ", "h", List.of(), INSTRUCTION), IllegalArgumentException.class, "source is blank"),
+      new RuntimeRefusal("a request without a handler", () -> new SuppliedAccountsRequest(PROXY, PROGRAM, "s", null, List.of(), INSTRUCTION), NullPointerException.class, "handler"),
+      new RuntimeRefusal("a request with a blank handler", () -> new SuppliedAccountsRequest(PROXY, PROGRAM, "s", "", List.of(), INSTRUCTION), IllegalArgumentException.class, "handler is blank"),
+      new RuntimeRefusal("a request with null roles", () -> new SuppliedAccountsRequest(PROXY, PROGRAM, "s", "h", null, INSTRUCTION), NullPointerException.class, "roles"),
+      new RuntimeRefusal("a request with a null role", () -> new SuppliedAccountsRequest(PROXY, PROGRAM, "s", "h", withNull(), INSTRUCTION), NullPointerException.class, null),
+      new RuntimeRefusal("a request without an instruction", () -> new SuppliedAccountsRequest(PROXY, PROGRAM, "s", "h", List.of(), null), NullPointerException.class, "instruction"),
+      new RuntimeRefusal("a role without a name", () -> new SuppliedAccountsRequest.Role(null, List.of(), false), NullPointerException.class, "role"),
+      new RuntimeRefusal("a role with a blank name", () -> new SuppliedAccountsRequest.Role(" ", List.of(), false), IllegalArgumentException.class, "role is blank"),
+      new RuntimeRefusal("a role with null addresses", () -> new SuppliedAccountsRequest.Role("r", null, false), NullPointerException.class, "of"),
+      new RuntimeRefusal("a role with a null address", () -> new SuppliedAccountsRequest.Role("r", withNull(), false), NullPointerException.class, null)
+  );
+
+  @TestFactory
+  Stream<DynamicTest> runtimeRequestsRefuseOnConstruction() {
+    return RUNTIME_REFUSALS.stream().map(refusal -> DynamicTest.dynamicTest(refusal.what(), () -> {
+      final var e = assertThrows(refusal.type(), refusal.construct(), refusal.what());
+      if (refusal.message() != null) {
+        assertEquals(refusal.message(), e.getMessage(), refusal.what());
+      }
+    }));
+  }
+
+  /// Blank is what the parser reads as blank (JavaScript's `trim`): U+001C is a name to both,
+  /// a no-break space to neither, so a name the parser admitted builds a request.
+  @Test
+  void runtimeRequestsReadBlankAsTheParserDoes() {
+    assertEquals("\u001c", new SuppliedAccountsRequest.Role("\u001c", List.of(), false).role());
+    assertEquals("\u001c", new SuppliedAccountsRequest(PROXY, PROGRAM, "\u001c", "\u001c", List.of(), INSTRUCTION).source());
+    assertThrows(IllegalArgumentException.class, () -> new SuppliedAccountsRequest.Role("\u00a0", List.of(), false));
+    assertThrows(IllegalArgumentException.class, () -> new SuppliedAccountsRequest(PROXY, PROGRAM, "\u00a0", "h", List.of(), INSTRUCTION));
+  }
+
+  @Test
+  void runtimeRequestsCopyTheirLists() {
+    final var roles = new ArrayList<SuppliedAccountsRequest.Role>();
+    roles.add(new SuppliedAccountsRequest.Role("r", new ArrayList<>(List.of(PROGRAM)), true));
+    final var request = new SuppliedAccountsRequest(PROXY, PROGRAM, "s", "h", roles, INSTRUCTION);
+    roles.clear();
+    assertEquals(1, request.roles().size());
+    assertThrows(UnsupportedOperationException.class, () -> request.roles().clear());
+    assertThrows(UnsupportedOperationException.class, () -> request.roles().getFirst().of().clear());
+  }
 
   @TestFactory
   Stream<DynamicTest> refusesOnConstruction() {
@@ -127,6 +189,17 @@ final class RecordsTests {
     assertEquals(List.of(SOURCE), mapped.sourceAccounts());
     assertEquals(List.of(SEAT), mapped.destinationAccounts());
     assertThrows(UnsupportedOperationException.class, () -> mapped.sourceAccounts().clear());
+    assertEquals(List.of(), mapped.suppliedAccounts());
+    final var positions = new ArrayList<>(List.of(1, 2));
+    final var supplied = new SuppliedAccount("r", positions, true);
+    positions.clear();
+    assertEquals(List.of(1, 2), supplied.of());
+    assertThrows(UnsupportedOperationException.class, () -> supplied.of().clear());
+    final var suppliedList = new ArrayList<>(List.of(supplied));
+    final var withSupplied = new InstructionEntry.Mapped("m", DISC, HANDLER, List.of(), List.of(), RemainingAccounts.ANY, suppliedList);
+    suppliedList.clear();
+    assertEquals(List.of(supplied), withSupplied.suppliedAccounts());
+    assertThrows(UnsupportedOperationException.class, () -> withSupplied.suppliedAccounts().clear());
     final var entries = new ArrayList<InstructionEntry>(List.of(mapped));
     final var document = new MappingDocument(1, "test", PROGRAM, PROXY, null, entries);
     entries.clear();

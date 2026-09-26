@@ -248,6 +248,61 @@ final class DocumentMapper implements InstructionMapper {
       }
     }
 
+    final var supplied = entry.suppliedAccounts();
+    if (!supplied.isEmpty()) {
+      final var supplier = context.suppliedAccounts();
+      if (supplier == null) {
+        return refuse(program, source, UnsupportedReason.CONTEXT, "the context supplies no accounts for " + source);
+      }
+      final var roles = new ArrayList<SuppliedAccountsRequest.Role>(supplied.size());
+      int required = 0;
+      for (final var account : supplied) {
+        // every `of` position is inside the list and none is omittable, so the instruction
+        // carries it: a shorter instruction was refused above
+        final var of = new ArrayList<PublicKey>(account.of().size());
+        for (final int position : account.of()) {
+          of.add(accounts.get(position).publicKey());
+        }
+        roles.add(new SuppliedAccountsRequest.Role(account.role(), of, account.optional()));
+        if (!account.optional()) {
+          ++required;
+        }
+      }
+      final PublicKey[] answer;
+      try {
+        final var list = supplier.apply(new SuppliedAccountsRequest(
+            document.proxyProgramId(), program, source, entry.handler().name(), roles, instruction
+        ));
+        // read once, here: an answer that fails while it is read is the supplier's failure
+        answer = list == null ? null : list.toArray(PublicKey[]::new);
+      } catch (final Exception e) {
+        if (e instanceof InterruptedException) {
+          Thread.currentThread().interrupt();
+        }
+        final var message = e.getMessage();
+        return refuse(program, source, UnsupportedReason.CONTEXT,
+            "the context's supplied accounts failed for " + source + ": " + (message == null ? e.toString() : message));
+      }
+      if (answer == null) {
+        return refuse(program, source, UnsupportedReason.CONTEXT, "the context supplies no accounts for " + source);
+      }
+      final int max = supplied.size();
+      if (answer.length < required || answer.length > max) {
+        return refuse(program, source, UnsupportedReason.SUPPLIED_ACCOUNTS,
+            source + " takes " + (required == max ? String.valueOf(max) : required + " to " + max)
+                + (max == 1 ? " supplied account (" : " supplied accounts (") + roleNames(supplied)
+                + "); the context supplied " + answer.length);
+      }
+      for (int i = 0; i < answer.length; i++) {
+        final var address = answer[i];
+        if (address == null) {
+          return refuse(program, source, UnsupportedReason.SUPPLIED_ACCOUNTS,
+              "the context supplied a null account at " + i + " for " + source);
+        }
+        mapped.add(AccountMeta.createRead(address));
+      }
+    }
+
     if (provided > listed) {
       if (entry.remainingAccounts() == RemainingAccounts.NONE) {
         return refuse(program, source, UnsupportedReason.REMAINING_ACCOUNTS,
@@ -274,6 +329,21 @@ final class DocumentMapper implements InstructionMapper {
         source,
         handler.name()
     );
+  }
+
+  /// The roles of an entry's supplied accounts, comma-separated, an optional one marked `?`.
+  private static String roleNames(final List<SuppliedAccount> supplied) {
+    final var names = new StringBuilder();
+    for (final var account : supplied) {
+      if (!names.isEmpty()) {
+        names.append(", ");
+      }
+      names.append(account.role());
+      if (account.optional()) {
+        names.append('?');
+      }
+    }
+    return names.toString();
   }
 
   private static MapResult.Unsupported refuse(final PublicKey program,

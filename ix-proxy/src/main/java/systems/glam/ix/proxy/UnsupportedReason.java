@@ -15,8 +15,12 @@ public enum UnsupportedReason {
   ACCOUNT_PRIVILEGE("account_privilege"),
   /// The instruction carries accounts beyond the list and the document forbids them.
   REMAINING_ACCOUNTS("remaining_accounts"),
-  /// The context supplies no address for a GLAM account the document seats.
+  /// The context supplies no address for a GLAM account the document seats, or no accounts
+  /// for an entry that lists supplied ones.
   CONTEXT("context"),
+  /// The context supplied the wrong number of accounts for an entry that lists supplied ones,
+  /// or a null one.
+  SUPPLIED_ACCOUNTS("supplied_accounts"),
   /// The instruction itself cannot be read: its data span lies outside its buffer, or an
   /// account is unresolved (a lookup-table account the transaction did not load).
   UNREADABLE_INSTRUCTION("unreadable_instruction");

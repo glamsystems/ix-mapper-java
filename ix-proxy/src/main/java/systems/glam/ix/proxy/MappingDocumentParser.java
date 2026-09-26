@@ -20,8 +20,11 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// not dense from 0, a source position forwarded twice or forwarded read-only while the native
 /// position is writable, an omittable optional ahead of a required position, a seat after an
 /// omittable one or omittable seats out of source order, a sentinel seat that does not forward
-/// an optional the client passes as the program id, an unknown dynamic account, and a
-/// discriminator that is a prefix of another's, since matching is by prefix.
+/// an optional the client passes as the program id, an unknown dynamic account, a
+/// discriminator that is a prefix of another's, since matching is by prefix, and supplied
+/// accounts on a `passthrough` or `unsupported` entry or on an entry with a seat a client may
+/// leave out, naming a position outside the list or an optional one, or a required one after
+/// an optional one.
 ///
 /// A refusal carries the document contract's message where the contract has one, and this
 /// parser's own where it refuses more (the tracking issue lists those). An address must
@@ -311,15 +314,15 @@ public final class MappingDocumentParser {
   }
 
   /// The checks across a document's entries that a document built from records still owes
-  /// before a mapper reads it: every seat and position in range and in order, no shadowing
-  /// discriminator. Each record checked its own fields on construction, and a parsed
-  /// document passed all of this already.
+  /// before a mapper reads it: every seat and position in range and in order, supplied
+  /// accounts inside their rules, no shadowing discriminator. Each record checked its own
+  /// fields on construction, and a parsed document passed all of this already.
   static void checkDocument(final MappingDocument document) {
     final var at = document.programId().toBase58();
     final var entries = document.instructions();
     for (int i = 0; i < entries.size(); i++) {
       if (entries.get(i) instanceof InstructionEntry.Mapped mapped) {
-        validateShape(mapped.sourceAccounts(), mapped.destinationAccounts(), at + " instructions[" + i + "]");
+        validateShape(mapped.sourceAccounts(), mapped.destinationAccounts(), mapped.suppliedAccounts(), at + " instructions[" + i + "]");
       }
     }
     checkShadowing(entries, at);
@@ -617,12 +620,13 @@ public final class MappingDocumentParser {
     private boolean dispositionSeen, dispositionMalformed;
     private String disposition;
     private String reason;
-    private boolean reasonSeen, handlerSeen, sourcesSeen, seatsSeen, remainingSeen;
+    private boolean reasonSeen, handlerSeen, sourcesSeen, seatsSeen, remainingSeen, suppliedSeen;
     private HandlerBuilder handler;
     private List<SourceBuilder> sources;
     private List<SeatBuilder> seats;
     private RemainingAccounts remaining;
     private String remainingError;
+    private List<SuppliedBuilder> supplied;
 
     private EntryBuilder(final int index) {
       this.index = index;
@@ -750,6 +754,20 @@ public final class MappingDocumentParser {
               }
             }
           }
+        } else if (fieldEquals("supplied_accounts", buf, offset, len)) {
+          suppliedSeen = true;
+          if (iterator.whatIsNext() != ValueType.ARRAY) {
+            iterator.skip();
+          } else {
+            supplied = new ArrayList<>();
+            int i = 0;
+            while (iterator.readArray()) {
+              final var account = new SuppliedBuilder(i);
+              account.read(iterator);
+              supplied.add(account);
+              ++i;
+            }
+          }
         } else {
           if (unknownField == null) {
             unknownField = unknownField(buf, offset, len);
@@ -804,6 +822,9 @@ public final class MappingDocumentParser {
           if (remainingSeen) {
             throw refuse(at, what + " carries no \"remaining_accounts\"");
           }
+          if (suppliedSeen) {
+            throw refuse(at, what + " carries no \"supplied_accounts\"");
+          }
           if (reason == null) {
             throw refuse(at, "reason must be a non-blank string");
           }
@@ -837,19 +858,165 @@ public final class MappingDocumentParser {
             throw refuse(at + " remaining_accounts", remainingError);
           }
           final var remainingAccounts = remainingSeen ? remaining : RemainingAccounts.ANY;
-          validateShape(sourceAccounts, destinationAccounts, at);
+          if (suppliedSeen && supplied == null) {
+            throw refuse(at, "supplied_accounts must be an array");
+          }
+          final var suppliedAccounts = new ArrayList<SuppliedAccount>();
+          if (supplied != null) {
+            for (final var account : supplied) {
+              suppliedAccounts.add(account.build(at + " supplied_accounts[" + account.index + "]"));
+            }
+          }
+          validateShape(sourceAccounts, destinationAccounts, suppliedAccounts, at);
           return new InstructionEntry.Mapped(
               name,
               discriminatorRecord,
               handlerRecord,
               List.copyOf(sourceAccounts),
               List.copyOf(destinationAccounts),
-              remainingAccounts
+              remainingAccounts,
+              List.copyOf(suppliedAccounts)
           );
         }
         case null -> throw refuse(at, name + " has unknown disposition null");
         default -> throw refuse(at, name + " has unknown disposition " + disposition);
       }
+    }
+  }
+
+  /// Supplied accounts name positions inside the list and none that is optional (an absent
+  /// run would shift what they name, and a program id in an optional's place names no
+  /// account), and the optional ones trail the required ones, so a supplier's shorter answer
+  /// leaves out only a trailing run.
+  private static void validateSupplied(final List<SourceAccount> sources,
+                                       final List<SuppliedAccount> supplied,
+                                       final String at) {
+    boolean optionalSeen = false;
+    for (int i = 0; i < supplied.size(); i++) {
+      final var account = supplied.get(i);
+      for (final int position : account.of()) {
+        if (position >= sources.size()) {
+          throw refuse(at, "supplied_accounts[" + i + "] names source position " + position
+              + ", which is out of range of " + sources.size());
+        }
+        if (sources.get(position).optional() == OptionalKind.OMITTED) {
+          throw refuse(at, "supplied_accounts[" + i + "] names source position " + position
+              + ", which a client may leave out; an absent run would shift it");
+        }
+        if (sources.get(position).optional() == OptionalKind.PROGRAM_ID) {
+          throw refuse(at, "supplied_accounts[" + i + "] names source position " + position
+              + ", which a client may pass as the program id; an absent optional names no account");
+        }
+      }
+      if (account.optional()) {
+        optionalSeen = true;
+      } else if (optionalSeen) {
+        throw refuse(at, "supplied_accounts[" + i + "] is required after an optional one; optional accounts trail");
+      }
+    }
+  }
+
+  private static final class SuppliedBuilder {
+
+    private final Set<String> fields = new HashSet<>();
+    private String duplicateField;
+
+    private final int index;
+    private boolean malformed;
+    private String unknownField;
+    private String role;
+    private boolean ofSeen, ofMalformed;
+    private List<Integer> of;
+    private String ofError;
+    private boolean optionalSeen, optional;
+
+    private SuppliedBuilder(final int index) {
+      this.index = index;
+    }
+
+    private void read(final JsonIterator ji) {
+      if (ji.whatIsNext() != ValueType.OBJECT) {
+        ji.skip();
+        malformed = true;
+        return;
+      }
+      ji.testObject((buf, offset, len, iterator) -> {
+        final var field = new String(buf, offset, len);
+        if (!fields.add(field)) {
+          // a document that names a field twice is refused, so no value is read twice into a
+          // half-updated holder
+          if (duplicateField == null) {
+            duplicateField = field;
+          }
+          iterator.skip();
+          return true;
+        }
+        if (fieldEquals("role", buf, offset, len)) {
+          try {
+            role = nonBlankString(iterator, "", "role");
+          } catch (final MappingDocumentException ignored) {
+            // absent and malformed read the same: the build names the field once
+          }
+        } else if (fieldEquals("of", buf, offset, len)) {
+          ofSeen = true;
+          if (iterator.whatIsNext() != ValueType.ARRAY) {
+            iterator.skip();
+            ofMalformed = true;
+          } else {
+            of = new ArrayList<>();
+            int i = 0;
+            while (iterator.readArray()) {
+              try {
+                of.add(nonNegativeInteger(iterator, "", "of[" + i + "]"));
+              } catch (final MappingDocumentException e) {
+                if (ofError == null) {
+                  ofError = e.detail();
+                }
+              }
+              ++i;
+            }
+          }
+        } else if (fieldEquals("optional", buf, offset, len)) {
+          optionalSeen = true;
+          if (iterator.whatIsNext() == ValueType.BOOLEAN) {
+            optional = iterator.readBoolean();
+          } else {
+            iterator.skip();
+            optional = false;
+          }
+        } else {
+          if (unknownField == null) {
+            unknownField = unknownField(buf, offset, len);
+          }
+          iterator.skip();
+        }
+        return true;
+      });
+    }
+
+    private SuppliedAccount build(final String at) {
+      if (malformed) {
+        throw refuse(at, "must be an object");
+      }
+      if (duplicateField != null) {
+        throw refuse(at, "duplicate field \"" + duplicateField + "\"");
+      }
+      if (unknownField != null) {
+        throw refuse(at, unknownField);
+      }
+      if (role == null) {
+        throw refuse(at, "role must be a non-blank string");
+      }
+      if (ofMalformed) {
+        throw refuse(at, "of must be an array");
+      }
+      if (ofError != null) {
+        throw refuse(at, ofError);
+      }
+      if (optionalSeen && !optional) {
+        throw refuse(at, "optional must be true when present");
+      }
+      return new SuppliedAccount(role, of == null ? List.of() : of, optionalSeen);
     }
   }
 
@@ -1257,10 +1424,12 @@ public final class MappingDocumentParser {
     }
   }
 
-  /// The invariants over a map entry's positions and seats.
+  /// The invariants over a map entry's positions, seats and supplied accounts.
   private static void validateShape(final List<SourceAccount> sources,
                                     final List<DestinationAccount> seats,
+                                    final List<SuppliedAccount> supplied,
                                     final String at) {
+    validateSupplied(sources, supplied, at);
     final var seen = new boolean[seats.size()];
     final var forwarded = new boolean[sources.size()];
     for (final var seat : seats) {
@@ -1312,6 +1481,11 @@ public final class MappingDocumentParser {
           && sources.get(forward.source()).optional() == OptionalKind.OMITTED;
       if (omittable) {
         omittableSeen = true;
+        if (!supplied.isEmpty()) {
+          // supplied accounts follow the seats, so the first would land where the absent one was
+          throw refuse(at, "supplied_accounts follow seat " + seat.index()
+              + ", which a client may leave out; an absent one would shift them");
+        }
         final int source = ((DestinationAccount.Source) seat).source();
         if (source <= lastOmittableSource) {
           throw refuse(at, "seat " + seat.index() + " forwards omittable position " + source

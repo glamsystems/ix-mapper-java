@@ -19,11 +19,14 @@ var documents = MappingDocuments.readDirectory(Path.of("mapping/production"));
 var mapper = InstructionMapper.createMapper(documents);
 
 // What a mapping needs from the caller: the vault's GLAM accounts. The mapper derives no
-// address; the integration authority of a proxy program is supplied by the caller too.
-var context = new MappingContext(glamState, glamVault, glamSigner, proxyProgram -> authorities.get(proxyProgram));
+// address; the integration authority of a proxy program is supplied by the caller too, and
+// so are the accounts a document lists as supplied (a handler's price oracles, a strategy's
+// market): the supplier is asked once per such instruction with the roles and the addresses
+// at their `of` positions, and answers in the same order.
+var context = new MappingContext(glamState, glamVault, glamSigner, proxyProgram -> authorities.get(proxyProgram), request -> resolvers.supply(request));
 
 // One instruction: throws nothing of its own, every outcome is a result (an Error from the
-// integration-authority lookup propagates).
+// integration-authority lookup or the supplier propagates).
 switch (mapper.map(instruction, context)) {
   case MapResult.Mapped mapped -> send(mapped.instruction());
   case MapResult.Passthrough passthrough -> send(passthrough.instruction()); // GLAM does not proxy it
@@ -56,8 +59,11 @@ source program's instructions with a **disposition** each:
 - `map`: the proxy program has a handler; `handler` names it, `source_accounts` describes the
   native instruction's account list (flags, optionals, expectations), `destination_accounts`
   the handler's seats, each dynamic (a GLAM account the context supplies), static (a fixed
-  address) or forwarded from a source position, and `remaining_accounts` says whether
-  accounts beyond the list may ride along;
+  address) or forwarded from a source position, `supplied_accounts` lists what the context
+  supplies after the seats (a role, the source positions whose addresses the supplier
+  receives with it, whether it may be left out; inserted read-only and unsigned, before the
+  accounts beyond the list), and `remaining_accounts` says whether accounts beyond the list
+  may ride along;
 - `passthrough`: the instruction is sent as it is, with the reason;
 - `unsupported`: GLAM refuses it, with the reason.
 

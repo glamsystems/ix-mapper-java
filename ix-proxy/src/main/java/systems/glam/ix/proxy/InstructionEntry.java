@@ -13,12 +13,24 @@ public sealed interface InstructionEntry
 
   Discriminator discriminator();
 
+  /// @param suppliedAccounts what the context supplies after the seats, in order; empty when
+  ///                         the handler reads nothing a native instruction does not carry
   record Mapped(String name,
                 Discriminator discriminator,
                 Handler handler,
                 List<SourceAccount> sourceAccounts,
                 List<DestinationAccount> destinationAccounts,
-                RemainingAccounts remainingAccounts) implements InstructionEntry {
+                RemainingAccounts remainingAccounts,
+                List<SuppliedAccount> suppliedAccounts) implements InstructionEntry {
+
+    public Mapped(final String name,
+                  final Discriminator discriminator,
+                  final Handler handler,
+                  final List<SourceAccount> sourceAccounts,
+                  final List<DestinationAccount> destinationAccounts,
+                  final RemainingAccounts remainingAccounts) {
+      this(name, discriminator, handler, sourceAccounts, destinationAccounts, remainingAccounts, List.of());
+    }
 
     public Mapped {
       Records.requireName(name, "InstructionEntry.Mapped", "name");
@@ -27,6 +39,7 @@ public sealed interface InstructionEntry
       sourceAccounts = Records.copy(sourceAccounts, "InstructionEntry.Mapped", "source_accounts");
       destinationAccounts = Records.copy(destinationAccounts, "InstructionEntry.Mapped", "destination_accounts");
       Records.require(remainingAccounts, "InstructionEntry.Mapped", "remaining_accounts");
+      suppliedAccounts = Records.copy(suppliedAccounts, "InstructionEntry.Mapped", "supplied_accounts");
     }
   }
 

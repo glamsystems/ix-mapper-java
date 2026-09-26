@@ -317,11 +317,57 @@ final class InstructionMapperTests {
     assertTrue(e.getMessage().contains("follows a seat a client may leave out"), e.getMessage());
     assertEquals(PROGRAM.toBase58() + " instructions[0]", e.at());
 
+    // one records-built entry per rule over supplied accounts
+    final var thing = new SourceAccount("thing", true, false, false, null, null);
+    final var trailing = new SourceAccount("trailing", false, false, false, OptionalKind.OMITTED, null);
+    final var maybe = new SourceAccount("maybe", false, false, false, OptionalKind.PROGRAM_ID, null);
+    final var seatZero = new DestinationAccount.Source(0, 0, true, false, false);
+    final var supplied = List.of(
+        java.util.Map.entry(
+            withSupplied(List.of(thing), List.of(seatZero), new SuppliedAccount("r", List.of(3), false)),
+            "supplied_accounts[0] names source position 3, which is out of range of 1"),
+        java.util.Map.entry(
+            withSupplied(List.of(thing, trailing), List.of(seatZero), new SuppliedAccount("r", List.of(1), false)),
+            "supplied_accounts[0] names source position 1, which a client may leave out; an absent run would shift it"),
+        java.util.Map.entry(
+            withSupplied(List.of(thing, maybe), List.of(seatZero), new SuppliedAccount("r", List.of(1), false)),
+            "supplied_accounts[0] names source position 1, which a client may pass as the program id; an absent optional names no account"),
+        java.util.Map.entry(
+            withSupplied(List.of(thing), List.of(seatZero), new SuppliedAccount("a", List.of(), true), new SuppliedAccount("b", List.of(), false)),
+            "supplied_accounts[1] is required after an optional one; optional accounts trail"),
+        java.util.Map.entry(
+            withSupplied(List.of(thing, trailing), List.of(seatZero, new DestinationAccount.Source(1, 1, false, false, false)), new SuppliedAccount("r", List.of(), false)),
+            "supplied_accounts follow seat 1, which a client may leave out; an absent one would shift them")
+    );
+    for (final var row : supplied) {
+      final var refused = assertThrows(MappingDocumentException.class, () -> InstructionMapper.createMapper(List.of(
+          new MappingDocument(1, "test", PROGRAM, PROXY, null, List.of(row.getKey())))), row.getValue());
+      assertTrue(refused.getMessage().contains(row.getValue()), refused.getMessage());
+      assertEquals(PROGRAM.toBase58() + " instructions[0]", refused.at());
+    }
+    // the same entries with the rule satisfied form a mapper
+    InstructionMapper.createMapper(List.of(new MappingDocument(1, "test", PROGRAM, PROXY, null, List.of(
+        withSupplied(List.of(thing, maybe), List.of(seatZero), new SuppliedAccount("r", List.of(0), false), new SuppliedAccount("s", List.of(), true))))));
+
     final var shadowed = new InstructionEntry.Passthrough("short", software.sava.core.programs.Discriminator.createDiscriminator(new byte[]{1}), "r");
     final var longer = new InstructionEntry.Passthrough("long", software.sava.core.programs.Discriminator.createDiscriminator(new byte[]{1, 2}), "r");
     final var shadow = assertThrows(MappingDocumentException.class, () -> InstructionMapper.createMapper(List.of(
         new MappingDocument(1, "test", PROGRAM, PROXY, null, List.of(shadowed, longer)))));
     assertTrue(shadow.getMessage().contains("is a prefix of long's"), shadow.getMessage());
+  }
+
+  private static InstructionEntry.Mapped withSupplied(final List<SourceAccount> sources,
+                                                      final List<DestinationAccount> seats,
+                                                      final SuppliedAccount... supplied) {
+    return new InstructionEntry.Mapped(
+        "place",
+        software.sava.core.programs.Discriminator.createDiscriminator(new byte[]{7}),
+        new Handler("proxy_place", software.sava.core.programs.Discriminator.createDiscriminator(new byte[]{9})),
+        sources,
+        seats,
+        RemainingAccounts.ANY,
+        List.of(supplied)
+    );
   }
 
   /// An instruction whose data span lies outside its buffer, as a transaction whose last
@@ -574,5 +620,284 @@ final class InstructionMapperTests {
         mapped.size(),
         "the settings are in the mapped transaction"
     );
+  }
+
+  private static final String SUPPLIED_DOCUMENT = """
+      {
+        "schema_version": 1, "environment": "test",
+        "program_id": "%s", "proxy_program_id": "%s",
+        "instructions": [{
+          "name": "place", "discriminator": [7], "disposition": "map",
+          "handler": { "name": "proxy_place", "discriminator": [9, 9] },
+          "source_accounts": [
+            { "name": "mint_a", "writable": false, "signer": false },
+            { "name": "mint_b", "writable": false, "signer": false }
+          ],
+          "destination_accounts": [
+            { "index": 0, "kind": "dynamic", "name": "glam_vault", "writable": true, "signer": false },
+            { "index": 1, "kind": "source", "source": 0, "writable": false, "signer": false },
+            { "index": 2, "kind": "source", "source": 1, "writable": false, "signer": false }
+          ],
+          "supplied_accounts": [
+            { "role": "asset_oracle", "of": [0] },
+            { "role": "asset_oracle", "of": [1] },
+            { "role": "sol_usd_oracle", "optional": true }
+          ]
+        }]
+      }
+      """;
+  private static final PublicKey MINT_A = PublicKey.fromBase58Encoded("MintA11111111111111111111111111111111111111");
+  private static final PublicKey MINT_B = PublicKey.fromBase58Encoded("MintB11111111111111111111111111111111111111");
+  private static final PublicKey PRICE_A = PublicKey.fromBase58Encoded("Price1A111111111111111111111111111111111111");
+  private static final PublicKey PRICE_B = PublicKey.fromBase58Encoded("Price1B111111111111111111111111111111111111");
+  private static final PublicKey SOL_USD = PublicKey.fromBase58Encoded("SoLUsd1111111111111111111111111111111111111");
+
+  private static InstructionMapper suppliedMapper() {
+    return InstructionMapper.createMapper(List.of(MappingDocumentParser.parse(
+        SUPPLIED_DOCUMENT.formatted(PROGRAM.toBase58(), PROXY.toBase58()), "place"
+    )));
+  }
+
+  private static Instruction placeInstruction() {
+    return Instruction.createInstruction(
+        PROGRAM,
+        List.of(AccountMeta.createRead(MINT_A), AccountMeta.createRead(MINT_B), AccountMeta.createWrite(THING)),
+        new byte[]{7, 5, 6}
+    );
+  }
+
+  /// The supplier is asked once, with the roles and the addresses at their `of` positions, and
+  /// its answer sits after the seats and before the accounts beyond the list, read-only and
+  /// unsigned, whatever the caller supplied.
+  @Test
+  void suppliedAccountsRideAfterTheSeatsAndTheRequestNamesTheRoles() {
+    final var requests = new java.util.ArrayList<SuppliedAccountsRequest>();
+    final var instruction = placeInstruction();
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      requests.add(request);
+      return List.of(PRICE_A, PRICE_B, SOL_USD);
+    });
+    final var mapped = assertInstanceOf(MapResult.Mapped.class, suppliedMapper().map(instruction, context));
+    assertEquals(List.of(
+        AccountMeta.createWrite(VAULT),
+        AccountMeta.createRead(MINT_A),
+        AccountMeta.createRead(MINT_B),
+        AccountMeta.createRead(PRICE_A),
+        AccountMeta.createRead(PRICE_B),
+        AccountMeta.createRead(SOL_USD),
+        AccountMeta.createWrite(THING)
+    ), mapped.instruction().accounts());
+    assertArrayEquals(new byte[]{9, 9, 5, 6}, mapped.instruction().data());
+    assertEquals(1, requests.size());
+    final var request = requests.getFirst();
+    assertEquals(PROXY, request.proxyProgram());
+    assertEquals(PROGRAM, request.program());
+    assertEquals("place", request.source());
+    assertEquals("proxy_place", request.handler());
+    assertSame(instruction, request.instruction());
+    assertEquals(List.of(
+        new SuppliedAccountsRequest.Role("asset_oracle", List.of(MINT_A), false),
+        new SuppliedAccountsRequest.Role("asset_oracle", List.of(MINT_B), false),
+        new SuppliedAccountsRequest.Role("sol_usd_oracle", List.of(), true)
+    ), request.roles());
+  }
+
+  @Test
+  void aSupplierMayLeaveOutTheOptionalTailOnly() {
+    final var mapper = suppliedMapper();
+    final var two = new MappingContext(STATE, VAULT, SIGNER, null, request -> List.of(PRICE_A, PRICE_B));
+    final var mapped = assertInstanceOf(MapResult.Mapped.class, mapper.map(placeInstruction(), two));
+    assertEquals(7 - 1, mapped.instruction().accounts().size());
+    assertEquals(AccountMeta.createWrite(THING), mapped.instruction().accounts().getLast());
+    final var one = new MappingContext(STATE, VAULT, SIGNER, null, request -> List.of(PRICE_A));
+    final var few = assertInstanceOf(MapResult.Unsupported.class, mapper.map(placeInstruction(), one));
+    assertEquals(UnsupportedReason.SUPPLIED_ACCOUNTS, few.reason());
+    assertEquals("place takes 2 to 3 supplied accounts (asset_oracle, asset_oracle, sol_usd_oracle?); the context supplied 1", few.message());
+    final var four = new MappingContext(STATE, VAULT, SIGNER, null, request -> List.of(PRICE_A, PRICE_B, SOL_USD, THING));
+    final var many = assertInstanceOf(MapResult.Unsupported.class, mapper.map(placeInstruction(), four));
+    assertEquals("place takes 2 to 3 supplied accounts (asset_oracle, asset_oracle, sol_usd_oracle?); the context supplied 4", many.message());
+    final var hole = new MappingContext(STATE, VAULT, SIGNER, null, request -> java.util.Arrays.asList(PRICE_A, null, SOL_USD));
+    final var withHole = assertInstanceOf(MapResult.Unsupported.class, mapper.map(placeInstruction(), hole));
+    assertEquals(UnsupportedReason.SUPPLIED_ACCOUNTS, withHole.reason());
+    assertEquals("the context supplied a null account at 1 for place", withHole.message());
+  }
+
+  /// An entry that lists no supplied accounts never asks: the supplier of a context that has
+  /// one is left alone, and a mapper that asked would refuse every ordinary instruction under
+  /// a supplier that answers null for what it does not know.
+  @Test
+  void anEntryWithoutSuppliedAccountsLeavesTheSupplierAlone() {
+    final var asked = new java.util.concurrent.atomic.AtomicInteger();
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      asked.incrementAndGet();
+      return null;
+    });
+    final var mapper = InstructionMapper.createMapper(List.of(relaying("test", PROGRAM)));
+    final var instruction = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createWrite(THING)), new byte[]{1, 7});
+    assertInstanceOf(MapResult.Mapped.class, mapper.map(instruction, context));
+    assertEquals(0, asked.get());
+  }
+
+  /// A role the parser admits builds the request: U+001C is not blank to the parser
+  /// (JavaScript's `trim`), so it is not blank to the request either, and mapping returns a
+  /// result rather than throwing from the record.
+  @Test
+  void aRoleTheParserAdmitsBuildsTheRequest() {
+    final var document = SUPPLIED_DOCUMENT.formatted(PROGRAM.toBase58(), PROXY.toBase58())
+        .replace("\"role\": \"sol_usd_oracle\"", "\"role\": \"\\u001c\"");
+    final var mapper = InstructionMapper.createMapper(List.of(MappingDocumentParser.parse(document, "place")));
+    final var roles = new java.util.ArrayList<String>();
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      request.roles().forEach(role -> roles.add(role.role()));
+      return List.of(PRICE_A, PRICE_B, SOL_USD);
+    });
+    assertInstanceOf(MapResult.Mapped.class, mapper.map(placeInstruction(), context));
+    assertEquals(List.of("asset_oracle", "asset_oracle", "\u001c"), roles);
+  }
+
+  /// A refusal at the positions or the seats comes before the supplier is asked.
+  @Test
+  void aSuppliedEntryRefusedAtAPositionOrASeatAsksNothing() {
+    final var base = SUPPLIED_DOCUMENT.formatted(PROGRAM.toBase58(), PROXY.toBase58());
+    final var expecting = base.replace(
+        "{ \"name\": \"mint_a\", \"writable\": false, \"signer\": false }",
+        "{ \"name\": \"mint_a\", \"writable\": false, \"signer\": false, \"expect\": \"glam_vault\" }");
+    final var signing = base
+        .replace("{ \"name\": \"mint_a\", \"writable\": false, \"signer\": false }",
+            "{ \"name\": \"mint_a\", \"writable\": false, \"signer\": true }")
+        .replace("{ \"index\": 1, \"kind\": \"source\", \"source\": 0, \"writable\": false, \"signer\": false }",
+            "{ \"index\": 1, \"kind\": \"source\", \"source\": 0, \"writable\": false, \"signer\": true }");
+    assertNotEquals(base, expecting);
+    assertNotEquals(base, signing);
+    final var asked = new java.util.concurrent.atomic.AtomicInteger();
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      asked.incrementAndGet();
+      return List.of(PRICE_A, PRICE_B, SOL_USD);
+    });
+    final var atPosition = InstructionMapper.createMapper(List.of(MappingDocumentParser.parse(expecting, "place")))
+        .map(placeInstruction(), context);
+    assertEquals(UnsupportedReason.ACCOUNT_EXPECTATION, assertInstanceOf(MapResult.Unsupported.class, atPosition).reason());
+    final var atSeat = InstructionMapper.createMapper(List.of(MappingDocumentParser.parse(signing, "place")))
+        .map(placeInstruction(), context);
+    assertEquals(UnsupportedReason.ACCOUNT_PRIVILEGE, assertInstanceOf(MapResult.Unsupported.class, atSeat).reason());
+    assertEquals(0, asked.get());
+  }
+
+  @Test
+  void aContextWithoutASupplierOrWithANullAnswerIsARefusal() {
+    final var mapper = suppliedMapper();
+    final var none = assertInstanceOf(MapResult.Unsupported.class, mapper.map(placeInstruction(), CONTEXT));
+    assertEquals(UnsupportedReason.CONTEXT, none.reason());
+    assertEquals("the context supplies no accounts for place", none.message());
+    final var unknown = new MappingContext(STATE, VAULT, SIGNER, null, request -> null);
+    final var absent = assertInstanceOf(MapResult.Unsupported.class, mapper.map(placeInstruction(), unknown));
+    assertEquals(UnsupportedReason.CONTEXT, absent.reason());
+    assertEquals("the context supplies no accounts for place", absent.message());
+  }
+
+  /// The catch is for exceptions: an `Error` a supplier throws is the caller's to see, as one
+  /// from the integration-authority lookup is.
+  @Test
+  void anErrorFromASupplierEscapes() {
+    final var mapper = suppliedMapper();
+    final var failing = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      throw new AssertionError("escapes");
+    });
+    final var escaped = assertThrows(AssertionError.class, () -> mapper.map(placeInstruction(), failing));
+    assertEquals("escapes", escaped.getMessage());
+  }
+
+  /// The answer is read once, inside the same guard as the call: a list that fails while it
+  /// is read is the supplier's failure, a refusal, not an escape.
+  @Test
+  void anAnswerThatFailsWhileReadIsARefusal() {
+    final var lazy = new java.util.AbstractList<PublicKey>() {
+      @Override
+      public PublicKey get(final int index) {
+        throw new IllegalStateException("lookup failed at " + index);
+      }
+
+      @Override
+      public int size() {
+        throw new IllegalStateException("size unknown");
+      }
+    };
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> lazy);
+    final var failed = assertInstanceOf(MapResult.Unsupported.class, suppliedMapper().map(placeInstruction(), context));
+    assertEquals(UnsupportedReason.CONTEXT, failed.reason());
+    assertEquals("the context's supplied accounts failed for place: size unknown", failed.message());
+  }
+
+  @Test
+  void aThrowingSupplierIsARefusalNotAnEscape() {
+    final var mapper = suppliedMapper();
+    final var throwing = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      throw new IllegalStateException("boom");
+    });
+    final var failed = assertInstanceOf(MapResult.Unsupported.class, mapper.map(placeInstruction(), throwing));
+    assertEquals(UnsupportedReason.CONTEXT, failed.reason());
+    assertEquals("the context's supplied accounts failed for place: boom", failed.message());
+    final var unnamed = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      throw new IllegalStateException();
+    });
+    final var failedWithoutAMessage = assertInstanceOf(MapResult.Unsupported.class, mapper.map(placeInstruction(), unnamed));
+    assertEquals("the context's supplied accounts failed for place: java.lang.IllegalStateException", failedWithoutAMessage.message());
+  }
+
+  /// An entry with one required supplied account names it in the singular.
+  @Test
+  void aSingleSuppliedAccountIsNamedInTheSingular() {
+    final var json = """
+        {
+          "schema_version": 1, "environment": "test",
+          "program_id": "%s", "proxy_program_id": "%s",
+          "instructions": [{
+            "name": "one", "discriminator": [1], "disposition": "map",
+            "handler": { "name": "proxy_one", "discriminator": [9] },
+            "source_accounts": [],
+            "destination_accounts": [],
+            "supplied_accounts": [{ "role": "loopscale_strategy_market" }]
+          }]
+        }
+        """.formatted(PROGRAM.toBase58(), PROXY.toBase58());
+    final var mapper = InstructionMapper.createMapper(List.of(MappingDocumentParser.parse(json, "one")));
+    final var instruction = Instruction.createInstruction(PROGRAM, List.of(), new byte[]{1});
+    final var empty = new MappingContext(STATE, VAULT, SIGNER, null, request -> List.of());
+    final var refused = assertInstanceOf(MapResult.Unsupported.class, mapper.map(instruction, empty));
+    assertEquals("one takes 1 supplied account (loopscale_strategy_market); the context supplied 0", refused.message());
+    final var served = new MappingContext(STATE, VAULT, SIGNER, null, request -> List.of(THING));
+    final var mapped = assertInstanceOf(MapResult.Mapped.class, mapper.map(instruction, served));
+    assertEquals(List.of(AccountMeta.createRead(THING)), mapped.instruction().accounts());
+  }
+
+  /// A checked exception or an interruption from the supplier is a refusal too, and the
+  /// thread keeps its interrupt flag.
+  @Test
+  void aSneakyCheckedExceptionOrAnInterruptFromTheSupplierIsARefusal() {
+    final var mapper = suppliedMapper();
+    final var sneakyIo = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      throw sneaky(new java.io.IOException("io"));
+    });
+    final var refused = assertInstanceOf(MapResult.Unsupported.class, mapper.map(placeInstruction(), sneakyIo));
+    assertEquals(UnsupportedReason.CONTEXT, refused.reason());
+    assertEquals("the context's supplied accounts failed for place: io", refused.message());
+    assertFalse(Thread.currentThread().isInterrupted());
+    final var interrupting = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      throw sneaky(new InterruptedException("interrupted"));
+    });
+    final var interrupted = assertInstanceOf(MapResult.Unsupported.class, mapper.map(placeInstruction(), interrupting));
+    assertTrue(Thread.interrupted(), "the interrupt flag is set again for the caller");
+    assertEquals(UnsupportedReason.CONTEXT, interrupted.reason());
+    assertEquals("the context's supplied accounts failed for place: interrupted", interrupted.message());
+  }
+
+  /// The older constructors still build a context that supplies nothing.
+  @Test
+  void theShorterContextConstructorsSupplyNoAccounts() {
+    assertNull(new MappingContext(STATE, VAULT, SIGNER).suppliedAccounts());
+    assertNull(new MappingContext(STATE, VAULT, SIGNER).integrationAuthority());
+    final var withAuthority = new MappingContext(STATE, VAULT, SIGNER, proxy -> THING);
+    assertNull(withAuthority.suppliedAccounts());
+    assertEquals(THING, withAuthority.integrationAuthority().apply(PROXY));
   }
 }
