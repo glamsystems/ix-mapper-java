@@ -198,7 +198,10 @@ seed under [ix-proxy/src/test/resources/fuzz](ix-proxy/src/test/resources/fuzz).
 
 ## Releases
 
-Conventional commits on `main` drive release-please; a tagged release publishes
-`systems.glam:ix-proxy` to GitHub Packages (`publish-gh.yml`). A consumer takes a document
+Conventional commits on `main` drive release-please under `always-bump-patch`, so a
+breaking change is named with a `Release-As: x.y.0` footer on a commit that changes a file
+of the package (release-please splits commits by path and drops one that touches nothing
+outside the excluded `ix-mapper-ts/` tree, an empty commit included); a tagged release
+publishes `systems.glam:ix-proxy` to GitHub Packages (`publish-gh.yml`). A consumer takes a document
 change and the library release that reads it together (see the note on `schema_version`
 and unknown fields above).
