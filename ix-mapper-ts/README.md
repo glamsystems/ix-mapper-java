@@ -3,7 +3,8 @@
 The mapping documents of the GLAM instruction mapper, in the layout of the TypeScript
 package `packages/glam/ix-mapper-ts` in the GLAM monorepo: the generated documents under
 `src/generated/mapping/{production,staging}`, the conformance cases under
-`test/data/cases` and the mapping vectors under `test/data/vectors`.
+`test/data/cases` and, once a sync carries them, the mapping vectors under
+`test/data/vectors`.
 
 The GLAM monorepo's public-sync workflow writes this directory, in a commit that names the
 monorepo commit it came from; the same workflow publishes the package to
