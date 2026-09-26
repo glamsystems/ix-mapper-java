@@ -340,6 +340,8 @@ final class MappingDocumentParserTests {
       new Refusal("a fractional schema version", d -> d.put("schema_version", 1.5), "schema_version 1.5 is not 1"),
       new Refusal("a schema version of two spelled as a decimal", d -> d.put("schema_version", 2.0), "schema_version 2 is not 1"),
       new Refusal("a seat index that is a string", d -> seat(d, 0).put("index", "0"), "index must be a non-negative integer"),
+      new Refusal("a seat index past a Java int", d -> seat(d, 0).put("index", 2147483648L), "index must be a non-negative integer"),
+      new Refusal("a source seat whose source is past a Java int", d -> seat(d, 2).put("source", 2147483648L), "source must be a non-negative integer"),
       new Refusal("a seat index equal to the seat count", d -> seat(d, 4).put("index", 5L), "seats are not dense from 0: seat 5 of 5"),
       new Refusal("a source position equal to the source count", d -> seat(d, 4).put("source", 4L), "seat 4 forwards source position 4, which is out of range of 4"),
       new Refusal("a seat writable that is not a boolean", d -> seat(d, 0).put("writable", 1L), "writable must be a boolean"),

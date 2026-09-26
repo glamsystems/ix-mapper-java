@@ -17,8 +17,9 @@ testModuleInfo {
 // the monorepo) — the seam that lets regenerated documents and new cases face this
 // validation before they are synced.
 //
-// The mapping content is a test input: a synced change or a regenerated override tree must
-// re-run the suite rather than serve a cached result.
+// The mapping content (documents, conformance cases, mapping vectors) is a test input: a
+// synced change or a regenerated override tree must re-run the suite rather than serve a
+// cached result.
 val mappingsRoot: File = providers.gradleProperty("glamMappingsDir").map { rootProject.file(it) }.getOrElse(rootDir.resolve("ix-mapper-ts"))
 val mappingsInputs = fileTree(mappingsRoot) { include("src/generated/mapping/**", "test/data/cases/**", "test/data/vectors/**") }
 
@@ -45,6 +46,9 @@ hardening {
       "systems.glam.ix.proxy.TestPaths"
     )
     targetTests = "systems.glam.ix.proxy.*Test*"
+    // the vectors replay every bundled entry against the TypeScript mapper's output: no kill the
+    // cases do not already make, and 2.4 times the run; `check` still runs them
+    excludeTestClass("systems.glam.ix.proxy.MapperVectorsTest", "no kill over the conformance cases; multiplies the run time")
     // the override reaches PIT's minion as one JVM argument; the plugin refuses a path it
     // cannot write into the minion's argument file when a pitest task builds its command line
     providers.gradleProperty("glamMappingsDir").orNull?.let { minionJvmArgs.add("-Dglam.mappings.dir=" + rootProject.file(it).absolutePath) }
