@@ -14,9 +14,9 @@ import java.util.List;
 /// against its buffer, data length against the discriminator length).
 ///
 /// The fuzz payload is carved into an instruction against a fixed mapper built from two
-/// documents covering every seat kind, both optional kinds, a sentinel, an expectation, both
-/// remaining-accounts rules and supplied accounts, and mapped under a context whose supplier
-/// the payload selects:
+/// documents covering every seat kind, both optional kinds, a sentinel, an expectation, a
+/// caller-chosen signer at a signing and at an unsigned seat, both remaining-accounts rules
+/// and supplied accounts, and mapped under a context whose supplier the payload selects:
 /// - byte 0 selects the target program (A, B, or one without a document) in its low two
 ///   bits, and in bits 2 to 4 what the context's supplier does ([Supply], in declaration
 ///   order);
@@ -36,9 +36,11 @@ import java.util.List;
 ///    source discriminator, byte for byte, both taken from the document literals below;
 /// 3. the mapped accounts are the document's seats in index order, each holding what the
 ///    seat names (the context's account, the static address, or the source position's key
-///    with the seat's flags; the proxy program, read-only, at a sentinel seat whose position
-///    holds the source program), less the omittable positions left out, then the supplier's
-///    answer, read-only and unsigned, then the accounts beyond the list as they came;
+///    with the seat's writable flag and the seat's signer flag, which the source account
+///    must hold, or at a caller-chosen signer's unsigned seat the source account's own; the
+///    proxy program, read-only, at a sentinel seat whose position holds the source program),
+///    less the omittable positions left out, then the supplier's answer, read-only and
+///    unsigned, then the accounts beyond the list as they came;
 /// 4. an entry that lists supplied accounts maps only under a supplier that answers them
 ///    all, or all the required ones, asked once;
 /// 5. a refusal for the context or the supplied accounts comes only from that entry, with
@@ -52,11 +54,11 @@ import java.util.List;
 ///
 /// These properties restate the mapper's rules over the parsed model, so the harness
 /// catches a crash, an escape, a mapped instruction whose shape departs from the document,
-/// a mapping that dropped a forwarded position the document does not let a client omit, and
-/// an outcome that departs from what the supplier answered; it cannot flag any other
-/// instruction the rules should have refused but mapped. The contract's expected results are
-/// the conformance cases (`MapperConformanceTest`), and each seed's outcome is pinned by
-/// `IxMapperFuzzSeedsTests`.
+/// a mapping that dropped a forwarded position the document does not let a client omit, a
+/// forwarded account seated with a signer flag it does not hold, and an outcome that departs
+/// from what the supplier answered; it cannot flag any other instruction the rules should
+/// have refused but mapped. The contract's expected results are the conformance cases
+/// (`MapperConformanceTest`), and each seed's outcome is pinned by `IxMapperFuzzSeedsTests`.
 ///
 /// Deliberately free of Jazzer imports so it compiles with the regular test sources.
 ///
@@ -190,7 +192,7 @@ public final class IxMapperFuzz {
                 "handler": { "name": "proxy_strict", "discriminator": [8, 8] },
                 "source_accounts": [
                   { "name": "payer", "writable": true, "signer": true, "dynamic_signer": true },
-                  { "name": "thing", "writable": false, "signer": false }
+                  { "name": "thing", "writable": false, "signer": false, "dynamic_signer": true }
                 ],
                 "destination_accounts": [
                   { "index": 0, "kind": "source", "source": 1, "writable": false, "signer": false },
@@ -392,10 +394,22 @@ public final class IxMapperFuzz {
             }
             continue;
           }
-          final var key = accounts.get(forwarded.source()).publicKey();
-          expected.add(forwarded.sentinel() && key.equals(program)
-              ? AccountMeta.createRead(PROXY)
-              : AccountMeta.createMeta(key, seat.writable(), seat.signer()));
+          final var account = accounts.get(forwarded.source());
+          final var key = account.publicKey();
+          if (forwarded.sentinel() && key.equals(program)) {
+            expected.add(AccountMeta.createRead(PROXY));
+            continue;
+          }
+          // a caller-chosen signer keeps the caller's flag at an unsigned seat; any other seat
+          // takes its own, which the account must hold
+          final boolean signer = entry.sourceAccounts().get(forwarded.source()).dynamicSigner() && !seat.signer()
+              ? account.signer()
+              : seat.signer();
+          if (account.signer() != signer) {
+            throw new AssertionError("mapped position " + forwarded.source() + " at seat " + seat.index()
+                + ", whose signer flag is " + signer + ", from an account whose flag is " + account.signer());
+          }
+          expected.add(AccountMeta.createMeta(key, seat.writable(), signer));
         }
       }
     }

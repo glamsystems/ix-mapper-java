@@ -42,10 +42,12 @@ A mapped instruction is built from three kinds of account, in this order:
    for GLAM, the vault's state, the vault, the key that signs, and a proxy program's
    integration authority), **static** (a fixed address: a program, a sysvar, a
    configuration PDA), or **forwarded** from a position of the target instruction (`"kind":
-   "source"` in the document), with the flags the proxy declares for the seat. A forwarded
-   seat may be a **sentinel**: when the target position is an optional the client passed as
-   the target program's id (Anchor's spelling of an absent account), the seat gets the proxy
-   program's id instead, read-only and unsigned.
+   "source"` in the document), with the flags the proxy declares for the seat, except that
+   an account at a position whose IDL leaves the signer to the caller (`dynamic_signer`)
+   keeps the caller's signer flag at an unsigned seat and must sign at a signing seat. A
+   forwarded seat may be a **sentinel**: when the target position is an optional the client
+   passed as the target program's id (Anchor's spelling of an absent account), the seat gets
+   the proxy program's id instead, read-only and unsigned.
 2. **Supplied accounts**: accounts the proxy reads from its remaining accounts that the
    target instruction never carries, named by a **role** the caller's context resolves at
    mapping time (for GLAM, a pool's price oracles, a strategy's market).
@@ -128,7 +130,7 @@ and a message that says what refused it:
 | `refused_instruction` | the entry is `unsupported`; the message is the document's reason |
 | `account_count` | the instruction leaves out an account the entry needs |
 | `account_expectation` | an account is not the one the entry expects at its position |
-| `account_privilege` | a forwarded account's signer privilege disagrees with its seat (unless the document leaves the signer to the caller) |
+| `account_privilege` | a forwarded account's signer privilege disagrees with its seat (at a position whose IDL leaves the signer to the caller, only an unsigned account at a signing seat) |
 | `remaining_accounts` | accounts beyond the listed positions, on an entry that forbids them |
 | `context` | the context supplies no address for a dynamic account the entry seats or expects (a null state, vault or signer; for the integration authority, no lookup, a null answer, or a lookup that threw), or no accounts for an entry that lists supplied ones (no supplier, a null answer, or a supplier that threw) |
 | `supplied_accounts` | the supplier answered with the wrong number of accounts, or a null one |

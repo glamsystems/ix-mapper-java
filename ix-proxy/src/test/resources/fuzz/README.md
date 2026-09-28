@@ -45,16 +45,18 @@ Arbitrary bytes carved into an instruction and mapped against a fixed two-docume
 account count and pool rotation, flag bits, a sentinel switch, a data span that may point
 outside the buffer). Document A's `full` entry covers every seat kind, both optional kinds,
 a sentinel and an expectation; its `priced` entry supplied accounts, two required and an
-optional one; document B's `strict` entry a forwarded signer and `remaining_accounts:
-none`. The harness checks the mapped shape against the document (proxy program, data, seat
-by seat, then the supplier's answer), and a refusal for the context or the supplied
-accounts against what the supplier did, which restates the mapper's own rules: it catches
-crashes, escapes, shape departures, a mapping that dropped a position the document does not
-let a client omit and an outcome that departs from the supplier's answer, not any other
-instruction the rules should have refused but mapped; those expectations are the
-conformance cases (`MapperConformanceTest`) and the seeds' pinned outcomes below (result
-kind, entry, the whole mapped account list with its flags, or the refusal reason and
-message, or the passthrough reason, and the times the supplier was asked).
+optional one; document B's `strict` entry two caller-chosen signers (`dynamic_signer`),
+one at a signing seat and one at an unsigned seat, and `remaining_accounts: none`. The
+harness checks the mapped shape against the document (proxy program, data, seat by seat,
+then the supplier's answer), and a refusal for the context or the supplied accounts against
+what the supplier did, which restates the mapper's own rules: it catches crashes, escapes,
+shape departures, a mapping that dropped a position the document does not let a client
+omit, a forwarded account seated with a signer flag it does not hold and an outcome that
+departs from the supplier's answer, not any other instruction the rules should have refused
+but mapped; those expectations are the conformance cases (`MapperConformanceTest`) and the
+seeds' pinned outcomes below (result kind, entry, the whole mapped account list with its
+flags, or the refusal reason and message, or the passthrough reason, and the times the
+supplier was asked).
 Seeds, named for the outcome they reach:
 
 - `a-full-every-position`, `a-full-omitted-trailing`, `a-full-sentinel-rewrite`,
@@ -75,4 +77,7 @@ Seeds, named for the outcome they reach:
 - `a-span-past-the-buffer`: a data span outside the buffer, refused as unreadable.
 - `b-strict-exact`, `b-strict-extra-account`, `b-strict-short-discriminator`: mapped, refused
   for an account beyond the list, and no match on a short discriminator.
+- `b-strict-signing-thing`, `b-strict-unsigned-payer`: the caller-chosen signers; a signing
+  `thing` is seated signed at its unsigned seat, and an unsigned `payer` is refused at its
+  signing seat.
 - `unknown-program`: a program with no document passes through.

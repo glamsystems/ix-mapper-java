@@ -238,12 +238,15 @@ final class DocumentMapper implements InstructionMapper {
             mapped.add(AccountMeta.createRead(document.proxyProgramId()));
             continue;
           }
-          if (!position.dynamicSigner() && account.signer() != seat.signer()) {
+          // a caller-chosen signer keeps the caller's flag at an unsigned seat; a signing seat
+          // needs it signed
+          final boolean signer = position.dynamicSigner() && !seat.signer() ? account.signer() : seat.signer();
+          if (account.signer() != signer) {
             return refuse(program, source, UnsupportedReason.ACCOUNT_PRIVILEGE, seat.signer()
                 ? source + " account " + forwarded.source() + " (" + position.name() + ") must sign"
                 : source + " account " + forwarded.source() + " (" + position.name() + ") signs, but the handler takes it unsigned");
           }
-          mapped.add(AccountMeta.createMeta(account.publicKey(), seat.writable(), seat.signer()));
+          mapped.add(AccountMeta.createMeta(account.publicKey(), seat.writable(), signer));
         }
       }
     }

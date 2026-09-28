@@ -80,6 +80,9 @@ final class IxMapperFuzzSeedsTests {
       Map.entry("a-span-past-the-buffer", refused(null, UnsupportedReason.UNREADABLE_INSTRUCTION,
           "the instruction's data span (offset 0, length 9) lies outside its buffer of 2 bytes", 0)),
       Map.entry("b-strict-exact", mapped("strict", 0)),
+      Map.entry("b-strict-signing-thing", mapped("strict", 0)),
+      Map.entry("b-strict-unsigned-payer", refused("strict", UnsupportedReason.ACCOUNT_PRIVILEGE,
+          "strict account 0 (payer) must sign", 0)),
       Map.entry("b-strict-extra-account", refused("strict", UnsupportedReason.REMAINING_ACCOUNTS,
           "strict takes no accounts beyond its 2; the instruction carries 3", 0)),
       Map.entry("b-strict-short-discriminator", refused(null, UnsupportedReason.UNKNOWN_INSTRUCTION,
@@ -105,6 +108,10 @@ final class IxMapperFuzzSeedsTests {
 
   private static Meta writableSigner(final PublicKey key) {
     return new Meta(key, true, true);
+  }
+
+  private static Meta readSigner(final PublicKey key) {
+    return new Meta(key, false, true);
   }
 
   private static PublicKey suppliedAnswer(final int i) {
@@ -136,6 +143,8 @@ final class IxMapperFuzzSeedsTests {
       ),
       // seat 0 forwards position 1, seat 1 the signing payer at position 0
       "b-strict-exact", List.of(read(SIGNER), writableSigner(VAULT)),
+      // the caller-chosen signer at position 1 signs, and its unsigned seat 0 keeps the flag
+      "b-strict-signing-thing", List.of(readSigner(SIGNER), writableSigner(VAULT)),
       // five seats, the three supplied accounts, the two accounts beyond the list
       "a-priced-all", List.of(
           read(STATE), write(VAULT), writableSigner(SIGNER), write(SIGNER), read(VAULT),
