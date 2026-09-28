@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.1.1](https://github.com/glamsystems/ix-mapper-java/compare/25.1.0...25.1.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **ix-proxy:** keep a caller-chosen signer's flag at an unsigned seat and require it at a signing seat ([c948d58](https://github.com/glamsystems/ix-mapper-java/commit/c948d58ef5cf7dfe96362a4506ab635e464047cc))
+
 ## [25.1.0](https://github.com/glamsystems/ix-mapper-java/compare/25.0.4...25.1.0) (2026-09-26)
 
 
