@@ -51,7 +51,9 @@ consumer.
   it changed shows its effect. The hardening plugin's evidence manifest does
   not fingerprint the tracked tree, nor an override tree edited in place, so
   after either changes run `pitestIxProxy -PnoMutationHistory` before
-  trusting a standalone `pitestIxProxyVerify`. `-PglamMappingsDir=<path>`
+  trusting a standalone `pitestIxProxyVerify`. Byte-identical recompiled Java
+  classes do not prove that these mapping inputs stayed unchanged.
+  `-PglamMappingsDir=<path>`
   (resolved against the repository root) points the suite, and PIT's minion,
   at a local checkout of the package instead, for documents, cases and vectors
   that are not synced yet; the mapping content is a declared test input either
@@ -114,8 +116,8 @@ The `ix-proxy` module registers the PIT suite `pitestIxProxy` via the
 helpers excluded, so a new class is mutated by default. The run diffs
 unkilled mutants against the accepted baseline in `ix-proxy/config/pitest/`
 and fails on anything new. The record was re-seeded for the document mapper;
-`config/pitest/README.md` holds the triage history, the family arguments and
-the mutator-trial status.
+`config/pitest/README.md` holds the current family arguments and the
+mutator-trial measurements with their provenance; pass reports stay outside it.
 
 Two fuzz targets, with seed corpora under `ix-proxy/src/test/resources/fuzz/`
 replayed inside `check` by generated `*FuzzSeedReplayTest`s:
@@ -144,14 +146,24 @@ changes here:
      code, not prose). Repository-specific facts live after the block, never
      inside it. -->
 <!-- hardening-template block:start -->
-- Iterate with the module's `test` task. Before handoff, run each `pitest<Suite>`
-  whose mutated code the change can reach, including suites in dependent modules,
-  and `mutationOwnershipAudit` when production classes or target/exclusion rules
-  change. `hardeningCertify` (or `:hardeningCertifyAll`) is the pre-release check
-  this repo's notes assign an owner to, not the inner loop.
-- Iterate on one cluster with `-PmutateOnly=<class-glob>`. Before any record
-  decision, re-run unscoped with `-PnoMutationHistory`: a `[history]` report cannot
-  support adding, removing, or relabelling records.
+- Work with the module's `test` task. The mutation suites are a final gate, run once
+  per unpushed range when the work is complete and reviewed, before the push: each
+  `pitest<Suite>` whose mutated code the range can reach, including suites in
+  dependent modules, plus `mutationOwnershipAudit` when production classes or
+  target/exclusion rules changed. Never per commit, amend or review round; a change
+  the gate forces goes back through review as a delta. `hardeningCertify` (or
+  `:hardeningCertifyAll`) and `fuzzAll` are the pre-release checks this repo's notes
+  assign an owner to.
+- Doc and comment edits owe no suite; a build-script edit only when it changes what
+  PIT is given. A change the gate forced owes it again by the same reachability rule
+  once reviewed. `pitest<Suite>Verify` answers one way: it keeps its report while only
+  recompiled Java sources changed and every recompiled class is byte-identical, which
+  proves that suite is owed nothing; a refusal (a moved line, a resource, a build
+  script, an ArcMutate suite) names its cause and proves nothing by itself.
+- When the gate reports unkilled mutants, iterate on one cluster with
+  `-PmutateOnly=<class-glob>`. Before any record decision, re-run unscoped with
+  `-PnoMutationHistory`: a `[history]` report cannot support adding, removing, or
+  relabelling records.
 - An unkilled mutant has three outcomes: kill it with a test that asserts the
   property it breaks, refactor it out of existence, or accept it with a written
   reason in `config/pitest/README.md` and a family label on the row. Refreshes seed
@@ -169,8 +181,13 @@ changes here:
   Never hand-edit baseline
   rows or provenance stamps.
 - Baseline keys are line-less (`class,method,mutator,STATUS`); `# line` tags are
-  review metadata. Identical rows are sibling mutants and the comparison is a
-  multiset: never hand-dedupe.
+  review metadata that belong to their row: `BaselineRetag` refreshes them, a hand
+  edit is a hand-edited row. Identical rows are sibling mutants and the comparison
+  is a multiset: never hand-dedupe.
+- `config/pitest/README.md` holds the arguments in force, each updated in place and
+  never appended to as a pass report: a family's members, reason, oracle and the
+  condition that invalidates it; an audited timeout's cause. The totals the build prints
+  are not restated there; the measurements it cannot reconstruct are kept.
 - A new `TIMED_OUT` mutant is a reviewer stop, never detection. Record it in
   `config/pitest/<suite>-timeouts.csv` with a cause and argue it in the README; only
   `cause:liveness` certifies. A member whose coordinate has left the population is
@@ -180,8 +197,8 @@ changes here:
   stubs that return distinguishable non-default values, and the subject built inside
   the test body. Exclusions must cover the test source set, not a naming convention.
 - Verify by the absence of failures: trust the exit code and the `.running`
-  sentinel, not a summary. `MINION_DIED` and `RUN_ERROR` are not results; re-run. A
-  suite that got faster without getting narrower is a bug report.
+  sentinel, not a summary. `MINION_DIED` and `RUN_ERROR` are not results; re-run once
+  on a quiet machine. A suite that got faster without getting narrower is a bug report.
 - Fuzz findings become a committed seed input and a named regression test. Run
   `fuzzAll` locally with an explicit `-PmaxFuzzTime` and `-PmaxParallelFuzzTargets`
   before a release. Where one thing has two representations, fuzz the differential.
@@ -189,17 +206,23 @@ changes here:
   sava-build's HARDENING.md holds the argument behind every rule above.
 <!-- hardening-template block:end -->
 
-For this repo, iterate with `:ix-proxy:test`; changes that can reach mutated
-code, including test-only edits, owe `pitestIxProxy`, while doc, comment, and
-build-script-only changes owe no mutation suite, and neither do edits confined
-to `MapperVectorsTest` or `test/data/vectors`, which the suite excludes
-(`excludeTestClass` in `ix-proxy/build.gradle.kts`: the vectors kill nothing
-the cases do not and multiply the run) (a build-script change that
-moves the mutation toolchain takes `pitestIxProxyBaselineRebase`, as the block
-above says). `hardeningCertify` is owned by the local release checklist;
-`:hardeningCertifyAll` certifies every suite and also writes the root manifest
-`.pitest-history/pitest-certification-all.tsv`. This GLAM repo is outside the
-Sava ArcMutate certificate and certifies with open-source PIT.
+For this repo, iterate with `:ix-proxy:test`. Once the unpushed range is
+complete and reviewed, changes that can reach mutated code, including test-only
+edits, owe `pitestIxProxy` before push. Doc and comment edits owe no mutation
+suite. Build-script edits owe it when they change what PIT receives, including
+dependencies, compiler or suite settings, or the PIT task itself; a mutation
+toolchain change takes `pitestIxProxyBaselineRebase`, as the block above says.
+Edits confined to `MapperVectorsTest` or `test/data/vectors` owe no mutation
+suite because PIT excludes them (`excludeTestClass` in
+`ix-proxy/build.gradle.kts`: the vectors kill nothing the cases do not and
+multiply the run). Both `MapperConformanceTest` and `MapperVectorsTest` must
+still run under `check`. Changed mapping documents or conformance cases require
+a fresh history-free PIT observation even when the Java classes are unchanged.
+`hardeningCertify` and an explicit local `fuzzAll` campaign are owned by the
+local release checklist; `:hardeningCertifyAll` certifies every suite and also
+writes the root manifest `.pitest-history/pitest-certification-all.tsv`. This
+GLAM repo is outside the Sava ArcMutate certificate and certifies with
+open-source PIT.
 
 `IxMapperFuzz` builds its mapper in a static field by design (one mapper for
 every input), and `IxMapperFuzzSeedsTests` replays the committed seeds through

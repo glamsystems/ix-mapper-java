@@ -1,87 +1,45 @@
 # Mutation-testing triage record
 
-The `ixProxy` accepted baseline holds the five unkilled rows of the document mapper (1226
-mutants, 1221 killed on the recorded run: 2026-09-26, PIT 1.30.0, full scope, history-free,
-the mappings root `packages/glam/ix-mapper-ts` of the GLAM monorepo at a9b9ee9fd through
-`-PglamMappingsDir`; the record before the supplied accounts, 2026-09-24, was 1089 and 1084,
-under 1.25.9 and again under 1.30.0), each
-with a family label whose equivalence argument is below; the timeout audit has no members.
+The `ixProxy` accepted baseline records the document mapper's equivalent mutants;
+the family arguments below apply only to the named members. The baseline CSV holds
+the exact keys and sibling multiplicity; the verify and debt listings report totals
+and triage state. The timeout audit has no members.
+
 The installed sava-build version's `hardeningHelp`, generated agent template, and
-`HARDENING.md` are authoritative for task and record semantics. Use its named writer tasks
-for record changes; never hand-edit record structure or provenance stamps.
+`HARDENING.md` are authoritative for task and record semantics. Use its named writer
+tasks for record changes; never hand-edit record structure or provenance stamps.
+Keep these arguments current in place; pass reports belong outside this README.
+This GLAM library uses open-source PIT, without the Sava ArcMutate certificate.
 
-## Triage history
+## Record provenance
 
-- **Seeded 2026-07-29** and worked down through 2026-08-26 for the index-map mapper
-  (`ProgramMapConfig`, `TransactionMapper`, `ConfigLoader` and the proxy classes): 13
-  accepted rows, two audited liveness timeouts, no `NO_COVERAGE`. That code is gone.
-- **Rewritten 2026-09-24** on the mapping document (`JsonSyntax`, `MappingDocumentParser`,
-  `DocumentMapper`, `InstructionMapper` and the sealed model). Every mutated class is new,
-  so the record was re-seeded whole with `pitestIxProxyBaselineUpdate` after the first
-  survivors were argued, and the 13 old rows and both old timeout members left with their
-  classes. The first history-free run of the rewrite reproduced 692 mutants with 518
-  killed; the parser's refusal paths were then given a row per field, the redundant
-  pre-checks that produced equivalent mutants were removed, and two local review rounds
-  added the syntax pass, the deferred top-level checks, the binary64 number reads, the
-  unreadable-instruction refusals and the format-preserving transaction rebuild, each with
-  its rows. Later rows joined through `pitestIxProxyBaselineUnion` and were labelled; the
-  one row those rounds killed left through `pitestIxProxyBaselinePrune` after two matching
-  previews, and `pitestIxProxyBaselineRetag` refreshed the line tags.
-- **Second review round, 2026-09-24:** a fuzz finding (a malformed UTF-8 byte the reader
-  threw on) gave the syntax pass its UTF-8 and surrogate-escape checks, and the string
-  scanner was restructured around one advance point (below). The records took their own
-  field checks, with this library's wording so a disabled parser check stays visible to the
-  contract's rows. The address bound's four `# cost-guard` rows left in two steps: a timing
-  test killed the upper bound's row (pruned with the timing test in place) and was itself
-  dropped for too thin a margin; then
-  `MappingDocumentParserTests.theBoundAndTheAlphabetKeepStringsOutsideThemFromTheDecoder`
-  (property: the decoder is never called for a string outside the spelling bound or the
-  alphabet, checked with a counting decoder handed to the package-private `decodeAddress`
-  overload) killed the other three, pruned once the counting test was in. The directory
-  reader now keys a `TreeMap` by file name, so its comparator row left and the key's
-  receiver row joined the same family through `pitestIxProxyBaselineUnion`. The run
-  recorded then: 2026-09-24, PIT 1.25.9, full scope, history-free (`-PnoMutationHistory`),
-  the mappings root the tracked `ix-mapper-ts/` directory (copied from ix-mapper-ts 16320bf).
-- **PIT 1.25.9 to 1.30.0, 2026-09-24** (sava-build 21.6.1 on `main`): a history-free
-  observation under the new PIT reproduced the recorded population, 1089 mutants with 1084
-  killed, the five accepted keys (`DocumentBuilder.test`, `validateShape` and `plainNumber`
-  in the parser, the two `readDirectory` receivers) the only survivors and no timeout, so
-  `pitestIxProxyBaselineRebase` moved the version and toolchain stamps and changed no row.
-- **Supplied accounts, 2026-09-25** (`SuppliedAccount`, `SuppliedAccountsRequest`, the
-  parser's `SuppliedBuilder` and `validateSupplied`, the mapper's insertion between the
-  seats and the accounts beyond the list, the `supplied_accounts` reason): the routine
-  `pitestIxProxy` run first showed thirteen unkilled mutants in the new code, eight
-  surviving and five uncovered (the interrupt relay and the `SuppliedBuilder` lambdas);
-  twelve were killed with tests (a second malformed element, the position just past the
-  list, two bad `of` positions naming the first, a duplicate field and two duplicate
-  fields in one supplied account, a sneaky interrupt from the supplier, the string
-  `"true"` for `optional`) and one capacity conditional removed from the parser rather
-  than argued; `pitestIxProxyBaselineRetag` refreshed the line tag of the one accepted row the
-  insertions shifted. The five accepted rows are unchanged. The review's seat rule (an
-  entry with a seat a client may leave out lists no supplied accounts) killed every
-  mutant of its own and moved three accepted rows, one by six lines and two by one;
-  `pitestIxProxyBaselineRetag` refreshed those tags, and no row changed. The second review
-  round (an `of` names no optional position, the answer read inside the guard) added five
-  mutants, all killed, and moved the same three rows again; retagged the same way. The
-  third round (runtime exceptions on the request records) and the fourth (blank as the
-  parser reads it, every mapped seed's account list pinned) changed no count. Recorded
-  run for this record: 2026-09-26, PIT 1.30.0, full scope, history-free
-  (`-PnoMutationHistory`), the mappings root the monorepo package at a9b9ee9fd through
-  `-PglamMappingsDir`; the same run over this repository's synced `ix-mapper-ts/` tree
-  (34 cases, none for supplied accounts) gives the same 1226 and 1221, every mutant with
-  the same status, so no row depends on the cases not yet synced.
+The mapping-document rewrite replaced the index-map mapper on 2026-09-24. Its
+baseline was re-seeded with `pitestIxProxyBaselineUpdate`; the retired classes'
+accepted rows and `ConfigLoader$Worker.get` timeout members left with that rewrite.
+Subsequent reviewed additions, removals and line metadata used
+`pitestIxProxyBaselineUnion`, `pitestIxProxyBaselinePrune` after matching fresh
+previews, and `pitestIxProxyBaselineRetag`, respectively.
+
+The PIT 1.25.9 to 1.30.0 transition on 2026-09-24 (sava-build 21.6.1) used
+`pitestIxProxyBaselineRebase` after a fresh full history-free observation reproduced
+the accepted population; it changed the version and toolchain stamps, not the rows.
+The supplied-account work on 2026-09-25 changed line metadata through
+`pitestIxProxyBaselineRetag`, without changing accepted members.
+
+The existing record's observation provenance is 2026-09-26, PIT 1.30.0, full scope,
+`-PnoMutationHistory`, with `-PglamMappingsDir` pointing at the GLAM monorepo's
+`packages/glam/ix-mapper-ts` at a9b9ee9fd. The synced `ix-mapper-ts/` tree also
+produced the same mutant statuses, so the acceptance does not depend on unsynced
+supplied-account cases. The earlier rewrite observation used the tracked tree copied
+from ix-mapper-ts 16320bf. These identify the evidence behind the record; the
+committed version and toolchain sidecars remain the provenance authority.
 
 ## Timed-out mutants (audited set)
 
-None. The old `ConfigLoader$Worker.get` liveness members went with the class. During the
-rewrite two `JsonSyntax` loop mutants (the `++i` of the array and string scanners turned
-into `--i`) timed out once as unbounded loops, and in the second review a `MathMutator` on
-the string scanner walked the cursor back onto the escape it had just read and hung. The
-scanner now moves its cursor through `take()` alone, with no other assignment or
-arithmetic on it: a reversed cursor fails on its first read, and every other mutant of the
-scan is a refusal or an admission the syntax rows observe. A shadow check over the entries
-timed out once with its outer loop's exit forced true and now fails fast, since the loop
-reads its entry at the top of each step.
+None. There is no live timeout-cause argument to maintain. Retired scanner and
+shadow-check loop incidents and their refactors remain in git history; they do not
+insure future timeouts. Any new timeout requires its own audit under the installed
+policy.
 
 ## Mutator-set trials
 
@@ -104,22 +62,45 @@ off.
 ## Triaged equivalent mutants (accepted with reasons)
 
 Group by the principle that makes them equivalent (see the recurring families in
-HARDENING.md); the baseline CSV carries the exact keys.
+HARDENING.md); the baseline CSV carries the exact keys. Re-read each argument when
+its code, callers or members change; a label does not accept another similar mutant.
 
-- `# top-level-predicate-return` (`DocumentBuilder.test`, the duplicate-field branch): the
-  field predicate returns `true` after skipping a field named twice; returning `false`
-  there ends the object read early, and the build refuses the duplicate before it looks at
-  anything the early end left unread, so the refusal is the same. The predicate's other
-  returns are killed by the member-order rows.
-- `# unreachable-equality` (`MappingDocumentParser.validateShape`, `plainNumber`): the
-  boundary of `source <= lastOmittableSource`, where equal sources are refused earlier as a
-  position forwarded twice; and the sign test `e > 0` on a printed exponent, reached only
-  when the exponent is at least 21 or at most -7. In both the equal case cannot arrive, so
-  the two boundary forms are observationally identical.
-- `# equivalent path-suffix` (`MappingDocuments.readDirectory`, 2 rows): the naked
-  receivers of `path.getFileName()` in the `.json` filter and in the `TreeMap` key. A
-  path's string form always ends with its file name's string form, and within one
-  directory ordering by path is ordering by file name, so neither mutant changes which
-  files are read or in what order.
+- `# top-level-predicate-return` — member: `MappingDocumentParser$DocumentBuilder.test`,
+  the `BooleanFalseReturnValsMutator` on the duplicate-field branch. The property is
+  that a document with a duplicate top-level field is refused naming its first duplicate
+  before other document-field checks. The field predicate records that duplicate and
+  skips its value; returning `false` instead of `true` ends the object read early, but
+  `build()` refuses the recorded duplicate before consulting fields left unread.
+  The independent oracle is the parser's duplicate-field refusal contract, pinned by
+  the duplicate top-level and two-duplicate rows in `MappingDocumentParserTests`,
+  rather than the predicate's return value. This equivalence expires if later reading
+  has an observable effect or can throw before the deferred duplicate refusal, if
+  validation order changes, or if iterator completion becomes part of the result.
+- `# unreachable-equality` — members: the `ConditionalsBoundaryMutator` in
+  `MappingDocumentParser.validateShape` on `source <= lastOmittableSource`, and in
+  `plainNumber` on `e > 0`. The shape property is that omittable seats follow strictly
+  increasing, unique source positions. Its independent oracle is the mapping
+  contract's refusal of duplicate forwarding and out-of-order omittable seats, pinned
+  by those refusal rows in `MappingDocumentParserTests`. Equal positions are already
+  refused by the earlier forwarding-uniqueness pass, so changing `<=` to `<` cannot
+  admit them. The number property is JavaScript's number-to-string exponent layout,
+  pinned by the literal expectations in `plainNumberPrintsAsJavaScriptDoes` and the
+  schema-version exponent refusal rows. Exponent form is entered only for `n > 21`
+  or `n <= -6`; `e = n - 1` is therefore at least 21 or at most -7, never zero, so
+  changing `> 0` to `>= 0` cannot change the sign spelling. Revisit the shape member
+  if uniqueness checks move or stop applying to every forwarded source, and the
+  number member if exponent thresholds or calculation change to make zero reachable.
+- `# equivalent path-suffix` — members: the `NakedReceiverMutator` on
+  `path.getFileName()` in `MappingDocuments.readDirectory`'s `.json` filter and
+  `TreeMap` key (`lambda$readDirectory$1` and `lambda$readDirectory$2`). The property
+  is to read regular `*.json` files directly under one directory in file-name order.
+  Its independent oracle is `MappingDocuments.readDirectory`'s public contract,
+  pinned by `MappingDocumentParserTests.readsDocumentsFromFiles`: other extensions
+  and nested files are excluded and the deliberately first-named document comes first.
+  For the paths supplied by `Files.list` in one directory, replacing the file name
+  with the complete path preserves the suffix and ordering: each path has the same
+  parent prefix and ends in its file name. Revisit if enumeration mixes parents,
+  recurses, uses a path provider with different string or comparison semantics, or
+  if the key becomes observable beyond ordering the returned documents.
 
 Shrinking a baseline is always an improvement; growing one requires a reason here.
