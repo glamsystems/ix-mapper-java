@@ -1,5 +1,21 @@
 # Changelog
 
+## [25.2.0](https://github.com/glamsystems/ix-mapper-java/compare/25.1.1...25.2.0) (2026-10-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ix-proxy:** DestinationAccount gains the permit Supplied, so an exhaustive switch over it must take the new kind; SuppliedAccountsRequest.Role gains a fourth component, derivation (the three-argument constructor stays); SuppliedAccountsRequest gains the nested Derivation, Seed, Const, Account and Arg, and the document model the record Derivation with its sealed Seed.
+
+### Features
+
+* **ix-proxy:** a supplied account at the account index its handler declares, with the derivation the IDL states ([6013cb4](https://github.com/glamsystems/ix-mapper-java/commit/6013cb41ef1a30ef1ee1d4b33dee510574d67f2b))
+
+
+### Bug Fixes
+
+* **build:** bump solanaBOMVersion to 25.30.32 ([edc3f6d](https://github.com/glamsystems/ix-mapper-java/commit/edc3f6df326c79ccf9ce1588f33de36bf0d574cc))
+
 ## [25.1.1](https://github.com/glamsystems/ix-mapper-java/compare/25.1.0...25.1.1) (2026-09-28)
 
 
