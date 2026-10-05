@@ -27,6 +27,8 @@ final class RecordsTests {
   private static final DestinationAccount SEAT = new DestinationAccount.Source(0, 0, true, false, false);
   private static final software.sava.core.tx.Instruction INSTRUCTION =
       software.sava.core.tx.Instruction.createInstruction(PROGRAM, List.of(), new byte[]{1});
+  private static final SuppliedAccountsRequest.Derivation RESOLVED = new SuppliedAccountsRequest.Derivation(
+      PROXY, List.of(new SuppliedAccountsRequest.Const(new byte[]{1}), new SuppliedAccountsRequest.Account(PROGRAM)));
 
   private static <T> List<T> withNull() {
     final var list = new ArrayList<T>();
@@ -88,6 +90,16 @@ final class RecordsTests {
       new Refusal("a static seat without an address", () -> new DestinationAccount.Static(0, null, false, false), "DestinationAccount.Static", "address is missing"),
       new Refusal("a source seat at a negative index", () -> new DestinationAccount.Source(-1, 0, false, false, false), "DestinationAccount.Source", "index is negative"),
       new Refusal("a source seat from a negative position", () -> new DestinationAccount.Source(0, -1, false, false, false), "DestinationAccount.Source", "source is negative"),
+      new Refusal("a supplied account at a negative account index", () -> new DestinationAccount.Supplied(-1, "r", false, false, null), "DestinationAccount.Supplied", "index is negative"),
+      new Refusal("a supplied account at an account index without a role", () -> new DestinationAccount.Supplied(0, null, false, false, null), "DestinationAccount.Supplied", "role is missing or blank"),
+      new Refusal("a supplied account at an account index with a blank role", () -> new DestinationAccount.Supplied(0, "\u3000", false, false, null), "DestinationAccount.Supplied", "role is missing or blank"),
+      new Refusal("a derivation without a program", () -> new Derivation(null, List.of()), "Derivation", "program is missing"),
+      new Refusal("a derivation without seeds", () -> new Derivation(PROXY, null), "Derivation", "seeds is missing"),
+      new Refusal("a derivation with a null seed", () -> new Derivation(PROXY, withNull()), "Derivation", "seeds holds a null element"),
+      new Refusal("a constant seed without bytes", () -> new Derivation.Const(null), "Derivation.Const", "value is missing"),
+      new Refusal("an account seed at a negative account index", () -> new Derivation.Account(-1), "Derivation.Account", "index is negative"),
+      new Refusal("an argument seed without a path", () -> new Derivation.Arg(null), "Derivation.Arg", "path is missing or blank"),
+      new Refusal("an argument seed with a blank path", () -> new Derivation.Arg("\u2028"), "Derivation.Arg", "path is missing or blank"),
       new Refusal("a dynamic expectation without a name", () -> new Expectation.Dynamic(null), "Expectation.Dynamic", "name is missing"),
       new Refusal("an address expectation without an address", () -> new Expectation.Address(null), "Expectation.Address", "address is missing"),
       new Refusal("a blank generator", () -> new Provenance(" ", null, null, 1), "Provenance", "generator is blank"),
@@ -116,7 +128,16 @@ final class RecordsTests {
       new RuntimeRefusal("a role without a name", () -> new SuppliedAccountsRequest.Role(null, List.of(), false), NullPointerException.class, "role"),
       new RuntimeRefusal("a role with a blank name", () -> new SuppliedAccountsRequest.Role(" ", List.of(), false), IllegalArgumentException.class, "role is blank"),
       new RuntimeRefusal("a role with null addresses", () -> new SuppliedAccountsRequest.Role("r", null, false), NullPointerException.class, "of"),
-      new RuntimeRefusal("a role with a null address", () -> new SuppliedAccountsRequest.Role("r", withNull(), false), NullPointerException.class, null)
+      new RuntimeRefusal("a role with a null address", () -> new SuppliedAccountsRequest.Role("r", withNull(), false), NullPointerException.class, null),
+      new RuntimeRefusal("a role with a derivation and without a name", () -> new SuppliedAccountsRequest.Role(null, List.of(), false, RESOLVED), NullPointerException.class, "role"),
+      new RuntimeRefusal("a role with a derivation and null addresses", () -> new SuppliedAccountsRequest.Role("r", null, false, RESOLVED), NullPointerException.class, "of"),
+      new RuntimeRefusal("a derivation without a program", () -> new SuppliedAccountsRequest.Derivation(null, List.of()), NullPointerException.class, "program"),
+      new RuntimeRefusal("a derivation without seeds", () -> new SuppliedAccountsRequest.Derivation(PROXY, null), NullPointerException.class, "seeds"),
+      new RuntimeRefusal("a derivation with a null seed", () -> new SuppliedAccountsRequest.Derivation(PROXY, withNull()), NullPointerException.class, null),
+      new RuntimeRefusal("a constant seed without bytes", () -> new SuppliedAccountsRequest.Const(null), NullPointerException.class, "value"),
+      new RuntimeRefusal("an account seed without an address", () -> new SuppliedAccountsRequest.Account(null), NullPointerException.class, "address"),
+      new RuntimeRefusal("an argument seed without a path", () -> new SuppliedAccountsRequest.Arg(null), NullPointerException.class, "path"),
+      new RuntimeRefusal("an argument seed with a blank path", () -> new SuppliedAccountsRequest.Arg(" "), IllegalArgumentException.class, "path is blank")
   );
 
   @TestFactory
@@ -135,8 +156,59 @@ final class RecordsTests {
   void runtimeRequestsReadBlankAsTheParserDoes() {
     assertEquals("\u001c", new SuppliedAccountsRequest.Role("\u001c", List.of(), false).role());
     assertEquals("\u001c", new SuppliedAccountsRequest(PROXY, PROGRAM, "\u001c", "\u001c", List.of(), INSTRUCTION).source());
+    assertEquals("\u001c", new SuppliedAccountsRequest.Arg("\u001c").path());
     assertThrows(IllegalArgumentException.class, () -> new SuppliedAccountsRequest.Role("\u00a0", List.of(), false));
     assertThrows(IllegalArgumentException.class, () -> new SuppliedAccountsRequest(PROXY, PROGRAM, "\u00a0", "h", List.of(), INSTRUCTION));
+    assertThrows(IllegalArgumentException.class, () -> new SuppliedAccountsRequest.Arg("\u00a0"));
+  }
+
+  /// A role names its derivation, null for one built without: the three-argument constructor
+  /// is the four-argument one with none, and equality sees the derivation, seed by seed.
+  @Test
+  void aRoleCarriesItsDerivation() {
+    final var plain = new SuppliedAccountsRequest.Role("r", List.of(PROGRAM), true);
+    assertNull(plain.derivation());
+    assertEquals(new SuppliedAccountsRequest.Role("r", List.of(PROGRAM), true, null), plain);
+    final var derived = new SuppliedAccountsRequest.Role("r", List.of(), false, RESOLVED);
+    assertSame(RESOLVED, derived.derivation());
+    assertEquals(new SuppliedAccountsRequest.Role("r", List.of(), false, new SuppliedAccountsRequest.Derivation(
+        PROXY, List.of(new SuppliedAccountsRequest.Const(new byte[]{1}), new SuppliedAccountsRequest.Account(PROGRAM)))), derived);
+    assertNotEquals(new SuppliedAccountsRequest.Role("r", List.of(), false), derived);
+    assertNotEquals(new SuppliedAccountsRequest.Role("r", List.of(), false, new SuppliedAccountsRequest.Derivation(
+        PROXY, List.of(new SuppliedAccountsRequest.Const(new byte[]{2}), new SuppliedAccountsRequest.Account(PROGRAM)))), derived);
+    assertNotEquals(new SuppliedAccountsRequest.Role("r", List.of(), false, new SuppliedAccountsRequest.Derivation(
+        PROGRAM, RESOLVED.seeds())), derived);
+    assertEquals(PROXY, RESOLVED.program());
+    assertEquals(PROGRAM, ((SuppliedAccountsRequest.Account) RESOLVED.seeds().get(1)).address());
+    assertEquals("params.protocol", new SuppliedAccountsRequest.Arg("params.protocol").path());
+  }
+
+  /// Both constant seeds, the document's and the request's, hold their own copy of the bytes
+  /// and hand out copies; two of the same bytes are equal, with the bytes' hash, and print the
+  /// bytes as the document spells them.
+  @Test
+  void aConstantSeedHoldsItsOwnBytes() {
+    final byte[] raw = {0, 1, (byte) 255};
+    final var seed = new Derivation.Const(raw);
+    final var resolved = new SuppliedAccountsRequest.Const(raw);
+    raw[0] = 9;
+    assertArrayEquals(new byte[]{0, 1, (byte) 255}, seed.value());
+    assertArrayEquals(new byte[]{0, 1, (byte) 255}, resolved.value());
+    seed.value()[1] = 9;
+    resolved.value()[1] = 9;
+    assertArrayEquals(new byte[]{0, 1, (byte) 255}, seed.value());
+    assertArrayEquals(new byte[]{0, 1, (byte) 255}, resolved.value());
+    assertEquals(new Derivation.Const(new byte[]{0, 1, (byte) 255}), seed);
+    assertEquals(new SuppliedAccountsRequest.Const(new byte[]{0, 1, (byte) 255}), resolved);
+    assertNotEquals(new Derivation.Const(new byte[]{0, 1}), seed);
+    assertNotEquals(new SuppliedAccountsRequest.Const(new byte[]{0, 1}), resolved);
+    assertNotEquals(seed, new Derivation.Account(0));
+    assertNotEquals(resolved, new SuppliedAccountsRequest.Account(PROGRAM));
+    assertEquals(java.util.Arrays.hashCode(new byte[]{0, 1, (byte) 255}), seed.hashCode());
+    assertEquals(java.util.Arrays.hashCode(new byte[]{0, 1, (byte) 255}), resolved.hashCode());
+    assertEquals("Const[value=[0, 1, 255]]", seed.toString());
+    assertEquals("Const[value=[0, 1, 255]]", resolved.toString());
+    assertEquals("Const[value=[]]", new Derivation.Const(new byte[0]).toString());
   }
 
   @Test
@@ -170,6 +242,19 @@ final class RecordsTests {
     assertEquals(0, new DestinationAccount.Dynamic(0, DynamicAccountName.GLAM_VAULT, true, false).index());
     assertEquals(PROXY, new DestinationAccount.Static(7, PROXY, false, false).address());
     assertEquals(3, new DestinationAccount.Source(2, 3, false, false, true).source());
+    final var derivation = new Derivation(PROXY, List.of(new Derivation.Const(new byte[]{1}), new Derivation.Account(0), new Derivation.Arg("params.protocol")));
+    final var supplied = new DestinationAccount.Supplied(4, "bridge_routes", true, false, derivation);
+    assertEquals(4, supplied.index());
+    assertEquals("bridge_routes", supplied.role());
+    assertTrue(supplied.writable());
+    assertFalse(supplied.signer());
+    assertSame(derivation, supplied.derivation());
+    assertEquals(PROXY, derivation.program());
+    assertEquals(new Derivation.Account(0), derivation.seeds().get(1));
+    assertEquals(0, new Derivation.Account(0).index());
+    assertEquals("params.protocol", ((Derivation.Arg) derivation.seeds().get(2)).path());
+    assertNull(new DestinationAccount.Supplied(0, "\u001c", false, false, null).derivation());
+    assertEquals("\u001c", new Derivation.Arg("\u001c").path());
     assertEquals(DynamicAccountName.GLAM_SIGNER, new Expectation.Dynamic(DynamicAccountName.GLAM_SIGNER).name());
     assertEquals(PROGRAM, new Expectation.Address(PROGRAM).address());
     assertEquals(1, new Provenance(null, null, null, 1).configRevision());
@@ -205,6 +290,16 @@ final class RecordsTests {
     entries.clear();
     assertEquals(List.of(mapped), document.instructions());
     assertThrows(UnsupportedOperationException.class, () -> document.instructions().add(mapped));
+    final var seeds = new ArrayList<Derivation.Seed>(List.of(new Derivation.Account(0)));
+    final var derivation = new Derivation(PROXY, seeds);
+    seeds.clear();
+    assertEquals(List.of(new Derivation.Account(0)), derivation.seeds());
+    assertThrows(UnsupportedOperationException.class, () -> derivation.seeds().clear());
+    final var resolvedSeeds = new ArrayList<SuppliedAccountsRequest.Seed>(List.of(new SuppliedAccountsRequest.Account(PROGRAM)));
+    final var resolved = new SuppliedAccountsRequest.Derivation(PROXY, resolvedSeeds);
+    resolvedSeeds.clear();
+    assertEquals(List.of(new SuppliedAccountsRequest.Account(PROGRAM)), resolved.seeds());
+    assertThrows(UnsupportedOperationException.class, () -> resolved.seeds().clear());
   }
 
   /// A discriminator is the record's own copy: the array it was built from, or an

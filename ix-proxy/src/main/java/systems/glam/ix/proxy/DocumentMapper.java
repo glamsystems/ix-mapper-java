@@ -203,6 +203,9 @@ final class DocumentMapper implements InstructionMapper {
     final var seats = new ArrayList<>(entry.destinationAccounts());
     seats.sort(Comparator.comparingInt(DestinationAccount::index));
     final var mapped = new ArrayList<AccountMeta>(seats.size() + provided);
+    // the accounts the context supplies at an account index, in account-index order: each
+    // holds its place in `mapped` as null until the supplier answers
+    final var placed = new ArrayList<DestinationAccount.Supplied>();
     for (final var seat : seats) {
       // the document orders omittable seats after every other and in source order, so an
       // absent one is followed only by absent ones and no seat shifts
@@ -248,17 +251,24 @@ final class DocumentMapper implements InstructionMapper {
           }
           mapped.add(AccountMeta.createMeta(account.publicKey(), seat.writable(), signer));
         }
+        case DestinationAccount.Supplied account -> {
+          placed.add(account);
+          mapped.add(null);
+        }
       }
     }
 
     final var supplied = entry.suppliedAccounts();
-    if (!supplied.isEmpty()) {
+    if (!placed.isEmpty() || !supplied.isEmpty()) {
       final var supplier = context.suppliedAccounts();
       if (supplier == null) {
         return refuse(program, source, UnsupportedReason.CONTEXT, "the context supplies no accounts for " + source);
       }
-      final var roles = new ArrayList<SuppliedAccountsRequest.Role>(supplied.size());
-      int required = 0;
+      final var roles = new ArrayList<SuppliedAccountsRequest.Role>(placed.size() + supplied.size());
+      for (final var account : placed) {
+        roles.add(new SuppliedAccountsRequest.Role(account.role(), List.of(), false, resolved(account.derivation(), mapped)));
+      }
+      int required = placed.size();
       for (final var account : supplied) {
         // every `of` position is inside the list and none is omittable, so the instruction
         // carries it: a shorter instruction was refused above
@@ -289,11 +299,11 @@ final class DocumentMapper implements InstructionMapper {
       if (answer == null) {
         return refuse(program, source, UnsupportedReason.CONTEXT, "the context supplies no accounts for " + source);
       }
-      final int max = supplied.size();
+      final int max = roles.size();
       if (answer.length < required || answer.length > max) {
         return refuse(program, source, UnsupportedReason.SUPPLIED_ACCOUNTS,
             source + " takes " + (required == max ? String.valueOf(max) : required + " to " + max)
-                + (max == 1 ? " supplied account (" : " supplied accounts (") + roleNames(supplied)
+                + (max == 1 ? " supplied account (" : " supplied accounts (") + roleNames(roles)
                 + "); the context supplied " + answer.length);
       }
       for (int i = 0; i < answer.length; i++) {
@@ -302,7 +312,15 @@ final class DocumentMapper implements InstructionMapper {
           return refuse(program, source, UnsupportedReason.SUPPLIED_ACCOUNTS,
               "the context supplied a null account at " + i + " for " + source);
         }
-        mapped.add(AccountMeta.createRead(address));
+        if (i < placed.size()) {
+          // the first answers take the accounts at an account index, with the handler's
+          // writable flag, unsigned; an account index precedes every account a client may
+          // leave out, so it is the account's place in `mapped`
+          final var account = placed.get(i);
+          mapped.set(account.index(), AccountMeta.createMeta(address, account.writable(), false));
+        } else {
+          mapped.add(AccountMeta.createRead(address));
+        }
       }
     }
 
@@ -334,15 +352,37 @@ final class DocumentMapper implements InstructionMapper {
     );
   }
 
-  /// The roles of an entry's supplied accounts, comma-separated, an optional one marked `?`.
-  private static String roleNames(final List<SuppliedAccount> supplied) {
+  /// The derivation the supplier receives: the document's, each account seed resolved to the
+  /// address the mapper placed at its account index (the context's for a GLAM account, the
+  /// fixed address, the forwarded account, or the proxy program where a sentinel rewrote it);
+  /// null when the document states none.
+  private static SuppliedAccountsRequest.Derivation resolved(final Derivation derivation, final List<AccountMeta> mapped) {
+    if (derivation == null) {
+      return null;
+    }
+    final var seeds = new ArrayList<SuppliedAccountsRequest.Seed>(derivation.seeds().size());
+    for (final var seed : derivation.seeds()) {
+      seeds.add(switch (seed) {
+        case Derivation.Const constant -> new SuppliedAccountsRequest.Const(constant.value());
+        // the parser admits no seed naming an account the context supplies or one a client
+        // may leave out, so the account index is the account's place in `mapped`, filled
+        case Derivation.Account account -> new SuppliedAccountsRequest.Account(mapped.get(account.index()).publicKey());
+        case Derivation.Arg argument -> new SuppliedAccountsRequest.Arg(argument.path());
+      });
+    }
+    return new SuppliedAccountsRequest.Derivation(derivation.program(), seeds);
+  }
+
+  /// The roles in the order the request names them, comma-separated, an optional one marked
+  /// `?`.
+  private static String roleNames(final List<SuppliedAccountsRequest.Role> roles) {
     final var names = new StringBuilder();
-    for (final var account : supplied) {
+    for (final var role : roles) {
       if (!names.isEmpty()) {
         names.append(", ");
       }
-      names.append(account.role());
-      if (account.optional()) {
+      names.append(role.role());
+      if (role.optional()) {
         names.append('?');
       }
     }

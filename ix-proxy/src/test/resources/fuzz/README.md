@@ -16,6 +16,10 @@ admit; any other throwable is a finding. Seeds:
 - `system-production.json`, `kamino-production.json`, `marinade-staging.json`: real
   generated documents (the System program, Kamino Lending, Marinade), copied from the
   tracked `ix-mapper-ts/` directory.
+- `cctp-production.json`: the generator's document for CCTP's token messenger, the mapping
+  contract's example of a supplied account at an account index (`bridge_routes` at account
+  index 7 of `deposit_for_burn`, with its derivation); it admits, and
+  `MappingDocumentParserTests` and `InstructionMapperTests` read it too.
 - `empty-object`, `no-instructions`: the empty document and one with no entries.
 - `malformed-utf8-environment`: the 2026-09-24 finding, a document whose environment string
   holds a lead byte with no continuation (`66 C8 75`); the syntax pass refuses it as not JSON,
@@ -37,15 +41,33 @@ admit; any other throwable is a finding. Seeds:
     `market` then `price_oracle`;
   - `supplied-on-passthrough`: the passthrough entry, carrying
     `"supplied_accounts": [{"role": "price_oracle"}]`.
+- `supplied-at-account-index`: a map entry with two supplied accounts at an account index
+  (`routes` at 2, derived from a constant, the state at account index 0, a forwarded account
+  at 3, the sentinel's account index 5 and an argument; `ledger` at 4, writable, with no
+  derivation) and an optional supplied account it lists, beside a passthrough entry; it
+  admits. Each other `supplied-at-account-index-*` seed changes it to break one rule, and is
+  refused:
+  - `supplied-at-account-index-signs`: `routes` signs;
+  - `supplied-at-account-index-from-a-supplied-account`: a seed of `routes` names account
+    index 4, `ledger`;
+  - `supplied-at-account-index-out-of-range`: a seed names account index 7, past the seven;
+  - `supplied-at-account-index-from-an-omittable-position`: a fourth, `omitted` position
+    forwarded at account index 7, which a seed names (and no supplied account listed, which
+    an omittable position would refuse first);
+  - `supplied-at-account-index-long-constant`: the constant seed is 33 bytes;
+  - `supplied-at-account-index-unknown-seed-kind`: the constant seed's kind is `pda`.
 
 ## ixMapper
 
 Arbitrary bytes carved into an instruction and mapped against a fixed two-document mapper
 (see `IxMapperFuzz` for the carve layout: program and what the context's supplier does,
 account count and pool rotation, flag bits, a sentinel switch, a data span that may point
-outside the buffer). Document A's `full` entry covers every seat kind, both optional kinds,
-a sentinel and an expectation; its `priced` entry supplied accounts, two required and an
-optional one; document B's `strict` entry two caller-chosen signers (`dynamic_signer`),
+outside the buffer). Document A's `full` entry covers every account kind but `supplied`,
+both optional kinds, a sentinel and an expectation; its `priced` entry supplied accounts,
+two required and an optional one; its `routed` entry two supplied accounts at an account
+index (`routes` at 2, whose derivation names a GLAM account, a fixed address, a forwarded
+account and the sentinel's account index 6, and `ledger` at 5, writable) and an optional
+one it lists; document B's `strict` entry two caller-chosen signers (`dynamic_signer`),
 one at a signing seat and one at an unsigned seat, and `remaining_accounts: none`. The
 harness checks the mapped shape against the document (proxy program, data, seat by seat,
 then the supplier's answer), and a refusal for the context or the supplied accounts against
@@ -72,6 +94,13 @@ Seeds, named for the outcome they reach:
   asked.
 - `a-priced-too-few`, `a-priced-too-many`, `a-priced-null-element`: refused for the
   supplied accounts.
+- `a-routed-all`, `a-routed-required-only`: mapped, the answers for `routes` and `ledger` at
+  their account indexes, then the optional `oracle` or nothing.
+- `a-routed-sentinel-rewrite`: mapped with program A at position 2, so account index 6 holds
+  the proxy program, which the supplier checks the derivation of `routes` names there.
+- `a-routed-remaining-accounts`: mapped, the accounts beyond the list after `oracle`.
+- `a-routed-no-supplier`, `a-routed-too-few`, `a-routed-null-element`: refused for the
+  context and for the supplied accounts.
 - `a-passthrough`, `a-refused`, `a-unknown-discriminator`, `a-empty-data`: the other
   dispositions and no match.
 - `a-span-past-the-buffer`: a data span outside the buffer, refused as unreadable.

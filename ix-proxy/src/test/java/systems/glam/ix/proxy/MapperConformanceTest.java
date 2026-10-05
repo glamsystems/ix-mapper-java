@@ -1,6 +1,7 @@
 package systems.glam.ix.proxy;
 
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import software.sava.core.accounts.PublicKey;
 import software.sava.core.accounts.meta.AccountMeta;
@@ -21,6 +22,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /// The conformance set every mapper of the document passes: the cases under
 /// `test/data/cases` of the TypeScript package, each an instruction, a context and the result
@@ -102,7 +104,9 @@ final class MapperConformanceTest {
   }
 
   /// The mapper asked once per entry the case serves, for the roles the case spells out with
-  /// the addresses at their `of` positions, and handed the supplier the instruction itself.
+  /// the addresses at their `of` positions and, for an account at an account index, its
+  /// derivation resolved ([#derivation]; a role that spells none has none), and handed the
+  /// supplier the instruction itself.
   static void assertRequests(final Map<String, Object> value,
                              final Instruction instruction,
                              final List<SuppliedAccountsRequest> asked) {
@@ -126,12 +130,96 @@ final class MapperConformanceTest {
         for (final var address : Json.array(role.get("of"))) {
           of.add(PublicKey.fromBase58Encoded((String) address));
         }
-        roles.add(new SuppliedAccountsRequest.Role((String) role.get("role"), of, (Boolean) role.get("optional")));
+        final var derivation = role.get("derivation");
+        roles.add(new SuppliedAccountsRequest.Role((String) role.get("role"), of, (Boolean) role.get("optional"),
+            derivation == null ? null : derivation(Json.object(derivation))));
       }
       assertEquals(roles, request.roles());
     }
     // and nothing else was asked: an entry without supplied accounts leaves the supplier alone
     assertEquals(Json.object(suppliedRaw).size(), asked.size(), "every ask is declared");
+  }
+
+  /// A role's derivation as a case spells it, resolved: the program, then each seed by its
+  /// kind with the bytes, the address or the path it carries.
+  static SuppliedAccountsRequest.Derivation derivation(final Map<String, Object> value) {
+    final var seeds = new ArrayList<SuppliedAccountsRequest.Seed>();
+    for (final var element : Json.array(value.get("seeds"))) {
+      final var seed = Json.object(element);
+      seeds.add(switch ((String) seed.get("kind")) {
+        case "const" -> {
+          final var bytes = Json.array(seed.get("value"));
+          final byte[] constant = new byte[bytes.size()];
+          for (int i = 0; i < constant.length; i++) {
+            constant[i] = (byte) ((Long) bytes.get(i)).intValue();
+          }
+          yield new SuppliedAccountsRequest.Const(constant);
+        }
+        case "account" -> new SuppliedAccountsRequest.Account(PublicKey.fromBase58Encoded((String) seed.get("address")));
+        case "arg" -> new SuppliedAccountsRequest.Arg((String) seed.get("path"));
+        default -> throw new IllegalArgumentException("a case's seed of unknown kind " + seed.get("kind"));
+      });
+    }
+    return new SuppliedAccountsRequest.Derivation(PublicKey.fromBase58Encoded((String) value.get("program")), seeds);
+  }
+
+  /// The request comparison reads a role's derivation in the resolved shape a case spells (the
+  /// program; a constant's bytes, an account's address, an argument's path) and takes an
+  /// absent one as none: a request that carries the same passes, and one whose derivation is
+  /// missing or differs in a seed fails.
+  @Test
+  void theRequestComparisonReadsADerivation() {
+    final var proxy = PublicKey.fromBase58Encoded("Proxy11111111111111111111111111111111111111");
+    final var program = PublicKey.fromBase58Encoded("Src1111111111111111111111111111111111111111");
+    final var state = PublicKey.fromBase58Encoded("State11111111111111111111111111111111111111");
+    final var context = Json.object(Json.read("""
+        {
+          "suppliedAccounts": {
+            "route": {
+              "request": {
+                "proxyProgram": "%1$s", "program": "%2$s", "handler": "proxy_route",
+                "roles": [
+                  {
+                    "role": "routes", "of": [], "optional": false,
+                    "derivation": {
+                      "program": "%1$s",
+                      "seeds": [
+                        { "kind": "const", "value": [114, 255] },
+                        { "kind": "account", "address": "%3$s" },
+                        { "kind": "arg", "path": "params.protocol" }
+                      ]
+                    }
+                  },
+                  { "role": "oracle", "of": [], "optional": true }
+                ]
+              },
+              "answer": []
+            }
+          }
+        }
+        """.formatted(proxy.toBase58(), program.toBase58(), state.toBase58())));
+    final var instruction = Instruction.createInstruction(program, List.of(), new byte[]{6});
+    final Function<SuppliedAccountsRequest.Derivation, List<SuppliedAccountsRequest>> asked = derivation -> List.of(
+        new SuppliedAccountsRequest(proxy, program, "route", "proxy_route", List.of(
+            new SuppliedAccountsRequest.Role("routes", List.of(), false, derivation),
+            new SuppliedAccountsRequest.Role("oracle", List.of(), true)
+        ), instruction));
+    assertRequests(context, instruction, asked.apply(new SuppliedAccountsRequest.Derivation(proxy, List.of(
+        new SuppliedAccountsRequest.Const(new byte[]{114, (byte) 255}),
+        new SuppliedAccountsRequest.Account(state),
+        new SuppliedAccountsRequest.Arg("params.protocol")
+    ))));
+    assertThrows(AssertionError.class, () -> assertRequests(context, instruction, asked.apply(null)));
+    assertThrows(AssertionError.class, () -> assertRequests(context, instruction, asked.apply(new SuppliedAccountsRequest.Derivation(proxy, List.of(
+        new SuppliedAccountsRequest.Const(new byte[]{114, (byte) 254}),
+        new SuppliedAccountsRequest.Account(state),
+        new SuppliedAccountsRequest.Arg("params.protocol")
+    )))));
+    assertThrows(AssertionError.class, () -> assertRequests(context, instruction, asked.apply(new SuppliedAccountsRequest.Derivation(proxy, List.of(
+        new SuppliedAccountsRequest.Const(new byte[]{114, (byte) 255}),
+        new SuppliedAccountsRequest.Account(proxy),
+        new SuppliedAccountsRequest.Arg("params.protocol")
+    )))));
   }
 
   /// A result as a JSON tree in the TypeScript suite's comparable shape: absent fields are

@@ -37,20 +37,24 @@ loads.
 
 A mapped instruction is built from three kinds of account, in this order:
 
-1. **Seats**: the proxy instruction's own account list, as its IDL declares it. Each seat is
-   **dynamic** (an account of the proxy's world that the caller supplies at mapping time:
-   for GLAM, the vault's state, the vault, the key that signs, and a proxy program's
+1. **Seats**: the proxy instruction's own account list, as its IDL declares it. Each seat
+   is **dynamic** (an account of the proxy's world that the caller supplies at mapping
+   time: for GLAM, the vault's state, the vault, the key that signs, and a proxy program's
    integration authority), **static** (a fixed address: a program, a sysvar, a
-   configuration PDA), or **forwarded** from a position of the target instruction (`"kind":
-   "source"` in the document), with the flags the proxy declares for the seat, except that
-   an account at a position whose IDL leaves the signer to the caller (`dynamic_signer`)
-   keeps the caller's signer flag at an unsigned seat and must sign at a signing seat. A
-   forwarded seat may be a **sentinel**: when the target position is an optional the client
-   passed as the target program's id (Anchor's spelling of an absent account), the seat gets
-   the proxy program's id instead, read-only and unsigned.
+   configuration PDA), **forwarded** from a position of the target instruction (`"kind":
+   "source"` in the document), or **supplied** (an account the target instruction never
+   carries, which the context supplies at that account index by role, with the derivation
+   the proxy's IDL states when it states one), with the flags the proxy declares for the
+   seat, except that an account at a position whose IDL leaves the signer to the caller
+   (`dynamic_signer`) keeps the caller's signer flag at an unsigned seat and must sign at
+   a signing seat. A forwarded seat may be a **sentinel**: when the target position is an
+   optional the client passed as the target program's id (Anchor's spelling of an absent
+   account), the seat gets the proxy program's id instead, read-only and unsigned.
 2. **Supplied accounts**: accounts the proxy reads from its remaining accounts that the
    target instruction never carries, named by a **role** the caller's context resolves at
-   mapping time (for GLAM, a pool's price oracles, a strategy's market).
+   mapping time (for GLAM, a pool's price oracles, a strategy's market). A proxy may also
+   declare such an account among its own, at an account index of its instruction; the
+   context's answer for it is placed there instead (for GLAM, a bridge's routing table).
 3. **Remaining accounts**: everything the caller passed beyond the target's listed
    positions, forwarded after the supplied accounts with the flags the caller gave, when the
    entry allows them.
@@ -132,7 +136,7 @@ and a message that says what refused it:
 | `account_expectation` | an account is not the one the entry expects at its position |
 | `account_privilege` | a forwarded account's signer privilege disagrees with its seat (at a position whose IDL leaves the signer to the caller, only an unsigned account at a signing seat) |
 | `remaining_accounts` | accounts beyond the listed positions, on an entry that forbids them |
-| `context` | the context supplies no address for a dynamic account the entry seats or expects (a null state, vault or signer; for the integration authority, no lookup, a null answer, or a lookup that threw), or no accounts for an entry that lists supplied ones (no supplier, a null answer, or a supplier that threw) |
+| `context` | the context supplies no address for a dynamic account the entry seats or expects (a null state, vault or signer; for the integration authority, no lookup, a null answer, or a lookup that threw), or no accounts for an entry that lists supplied accounts or has one at an account index (no supplier, a null answer, or a supplier that threw) |
 | `supplied_accounts` | the supplier answered with the wrong number of accounts, or a null one |
 | `unreadable_instruction` | the instruction itself cannot be read: a data span outside its buffer, or an account a transaction left unresolved |
 
@@ -145,9 +149,9 @@ An entry lists **supplied accounts** when the proxy reads accounts from its rema
 accounts that the target instruction never carries. In GLAM's staging documents, Orca's
 four liquidity handlers read the price oracles of the pool's two mints and, optionally, a
 SOL/USD oracle, and Loopscale's `update_strategy` the strategy's market. The mapper asks
-the context's supplier once per such instruction, after the position and seat checks and
-before the remaining-accounts check (so a supplier can be asked for an instruction that is
-then refused), with a
+the context's supplier once per instruction whose entry lists supplied accounts or has one
+at an account index, after the position and seat checks and before the remaining-accounts
+check (so a supplier can be asked for an instruction that is then refused), with a
 [`SuppliedAccountsRequest`](ix-proxy/src/main/java/systems/glam/ix/proxy/SuppliedAccountsRequest.java):
 the proxy and target programs, the entry and proxy instruction names, the roles in the
 order the accounts are inserted, each with the addresses found at its `of` positions (the
@@ -158,6 +162,21 @@ throws while being read counts as a supplier failure (`context`). The accounts a
 inserted after the seats and before the accounts beyond the list, read-only and unsigned.
 The supplier interprets the roles; the mapper does not.
 
+A proxy may also declare an account the target instruction never carries among its own
+accounts: the document lists it in `destination_accounts` at its account index with
+`"kind": "supplied"`, a role, the proxy's writable flag (it never signs) and, when the
+proxy's IDL states one, a `derivation`: the program the address derives under and the
+seeds, each constant bytes, an account index of the mapped instruction, or an argument of
+the instruction data by its path. The request names these roles first, in account-index
+order, with no `of` addresses and never optional, each with its derivation resolved
+([`SuppliedAccountsRequest.Derivation`](ix-proxy/src/main/java/systems/glam/ix/proxy/SuppliedAccountsRequest.java)):
+an account seed becomes the address the mapper placed at that account index (the
+context's, the fixed address, the forwarded account, or the proxy program where a sentinel
+rewrote it), a constant keeps its bytes and an argument its path, unread. The first answers
+take those account indexes, with the proxy's writable flag, unsigned; the count holds them
+required and names them first. The mapper still derives no address: a supplier that
+derives or checks the account has the program and the seeds.
+
 ## Mapping documents
 
 A document names its environment, its target program (`program_id`) and its proxy program
@@ -167,7 +186,8 @@ each:
 - `map`: the proxy has an instruction for it; `handler` names it, `source_accounts`
   describes the target instruction's account list (flags, optionals, expectations),
   `destination_accounts` the proxy's seats, each `dynamic`, `static` or `source` (forwarded
-  from a source position), `supplied_accounts` lists what the context supplies after the
+  from a source position), or `supplied` (an account the context supplies at its account
+  index), `supplied_accounts` lists what the context supplies after the
   seats (a role, the source positions whose addresses the supplier receives with it,
   whether it may be left out), and `remaining_accounts` (`{"kind": "any"}` or `{"kind":
   "none"}`; absent means `any`) says whether accounts beyond the list may ride along;

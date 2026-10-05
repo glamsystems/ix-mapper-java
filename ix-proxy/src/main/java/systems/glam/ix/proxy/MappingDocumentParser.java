@@ -24,7 +24,9 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// discriminator that is a prefix of another's, since matching is by prefix, and supplied
 /// accounts on a `passthrough` or `unsupported` entry or on an entry with a seat a client may
 /// leave out, naming a position outside the list or an optional one, or a required one after
-/// an optional one.
+/// an optional one, and a supplied account at an account index that signs, or whose
+/// derivation names an account index outside the list, one the context supplies or one a
+/// client may leave out, or holds a constant seed longer than 32 bytes.
 ///
 /// A refusal carries the document contract's message where the contract has one, and this
 /// parser's own where it refuses more (the tracking issue lists those). An address must
@@ -268,7 +270,11 @@ public final class MappingDocumentParser {
   }
 
   private static String format(final Discriminator discriminator) {
-    final var data = discriminator.data();
+    return format(discriminator.data());
+  }
+
+  /// Bytes as the document spells them, each 0 to 255: `[0, 1, 255]`.
+  static String format(final byte[] data) {
     final var sb = new StringBuilder("[");
     for (int i = 0; i < data.length; i++) {
       if (i > 0) {
@@ -1253,6 +1259,10 @@ public final class MappingDocumentParser {
     private Integer source;
     private Boolean writable, signer;
     private boolean sentinelSeen, sentinel;
+    private boolean roleSeen;
+    private String role;
+    private boolean derivationSeen;
+    private DerivationBuilder derivation;
 
     private SeatBuilder(final int index) {
       this.index = index;
@@ -1330,6 +1340,17 @@ public final class MappingDocumentParser {
             iterator.skip();
             sentinel = false;
           }
+        } else if (fieldEquals("role", buf, offset, len)) {
+          roleSeen = true;
+          try {
+            role = nonBlankString(iterator, "", "role");
+          } catch (final MappingDocumentException ignored) {
+            // absent and malformed read the same: the build names the field once
+          }
+        } else if (fieldEquals("derivation", buf, offset, len)) {
+          derivationSeen = true;
+          derivation = new DerivationBuilder();
+          derivation.read(iterator);
         } else {
           if (unknownField == null) {
             unknownField = unknownField(buf, offset, len);
@@ -1376,6 +1397,12 @@ public final class MappingDocumentParser {
           if (sentinelSeen) {
             throw refuse(at, "a dynamic seat carries no \"sentinel\"");
           }
+          if (roleSeen) {
+            throw refuse(at, "a dynamic seat carries no \"role\"");
+          }
+          if (derivationSeen) {
+            throw refuse(at, "a dynamic seat carries no \"derivation\"");
+          }
           if (name == null) {
             throw refuse(at, "name must be a non-blank string");
           }
@@ -1395,6 +1422,12 @@ public final class MappingDocumentParser {
           if (sentinelSeen) {
             throw refuse(at, "a static seat carries no \"sentinel\"");
           }
+          if (roleSeen) {
+            throw refuse(at, "a static seat carries no \"role\"");
+          }
+          if (derivationSeen) {
+            throw refuse(at, "a static seat carries no \"derivation\"");
+          }
           if (addressError != null) {
             throw refuse(at, addressError);
           }
@@ -1410,6 +1443,12 @@ public final class MappingDocumentParser {
           if (addressSeen) {
             throw refuse(at, "a source seat carries no \"address\"");
           }
+          if (roleSeen) {
+            throw refuse(at, "a source seat carries no \"role\"");
+          }
+          if (derivationSeen) {
+            throw refuse(at, "a source seat carries no \"derivation\"");
+          }
           if (source == null) {
             throw refuse(at, "source must be a non-negative integer");
           }
@@ -1418,8 +1457,257 @@ public final class MappingDocumentParser {
           }
           return new DestinationAccount.Source(seatIndex, source, writable, signer, sentinelSeen);
         }
+        case "supplied" -> {
+          if (nameSeen) {
+            throw refuse(at, "a supplied account carries no \"name\"");
+          }
+          if (addressSeen) {
+            throw refuse(at, "a supplied account carries no \"address\"");
+          }
+          if (sourceSeen) {
+            throw refuse(at, "a supplied account carries no \"source\"");
+          }
+          if (sentinelSeen) {
+            throw refuse(at, "a supplied account carries no \"sentinel\"");
+          }
+          if (role == null) {
+            throw refuse(at, "role must be a non-blank string");
+          }
+          final var derivationRecord = derivation == null ? null : derivation.build(at);
+          return new DestinationAccount.Supplied(seatIndex, role, writable, signer, derivationRecord);
+        }
         case null -> throw refuse(at, "unknown seat kind null");
         default -> throw refuse(at, "unknown seat kind " + kind);
+      }
+    }
+  }
+
+  /// A supplied account's derivation: its fields are read into holders and checked once the
+  /// account's `at` is known. Not an object is the account's refusal; the rest are the
+  /// derivation's own, and each seed's its own.
+  private static final class DerivationBuilder {
+
+    private final Set<String> fields = new HashSet<>();
+    private String duplicateField;
+
+    private boolean malformed;
+    private String unknownField;
+    private PublicKey program;
+    private String programError;
+    private List<SeedBuilder> seeds;
+
+    private void read(final JsonIterator ji) {
+      if (ji.whatIsNext() != ValueType.OBJECT) {
+        ji.skip();
+        malformed = true;
+        return;
+      }
+      ji.testObject((buf, offset, len, iterator) -> {
+        final var field = new String(buf, offset, len);
+        if (!fields.add(field)) {
+          // a document that names a field twice is refused, so no value is read twice into a
+          // half-updated holder
+          if (duplicateField == null) {
+            duplicateField = field;
+          }
+          iterator.skip();
+          return true;
+        }
+        if (fieldEquals("program", buf, offset, len)) {
+          try {
+            program = address(iterator, "", "program");
+          } catch (final MappingDocumentException e) {
+            programError = e.detail();
+          }
+        } else if (fieldEquals("seeds", buf, offset, len)) {
+          if (iterator.whatIsNext() != ValueType.ARRAY) {
+            iterator.skip();
+          } else {
+            seeds = new ArrayList<>();
+            int i = 0;
+            while (iterator.readArray()) {
+              final var seed = new SeedBuilder(i);
+              seed.read(iterator);
+              seeds.add(seed);
+              ++i;
+            }
+          }
+        } else {
+          if (unknownField == null) {
+            unknownField = unknownField(buf, offset, len);
+          }
+          iterator.skip();
+        }
+        return true;
+      });
+    }
+
+    private Derivation build(final String accountAt) {
+      if (malformed) {
+        throw refuse(accountAt, "derivation must be an object");
+      }
+      final var at = accountAt + " derivation";
+      if (duplicateField != null) {
+        throw refuse(at, "duplicate field \"" + duplicateField + "\"");
+      }
+      if (unknownField != null) {
+        throw refuse(at, unknownField);
+      }
+      if (programError != null) {
+        throw refuse(at, programError);
+      }
+      if (program == null) {
+        throw refuse(at, "program must be a non-blank string");
+      }
+      if (seeds == null) {
+        throw refuse(at, "seeds must be an array");
+      }
+      final var seedRecords = new ArrayList<Derivation.Seed>(seeds.size());
+      for (final var seed : seeds) {
+        seedRecords.add(seed.build(at + " seeds[" + seed.index + "]"));
+      }
+      return new Derivation(program, seedRecords);
+    }
+  }
+
+  /// One seed of a derivation, by its `kind`: `const` carries `value`, `account` an account
+  /// `index`, `arg` a `path`, and none carries another kind's field.
+  private static final class SeedBuilder {
+
+    private final Set<String> fields = new HashSet<>();
+    private String duplicateField;
+
+    private final int index;
+    private boolean malformed;
+    private String unknownField;
+    private boolean kindSeen, kindMalformed;
+    private String kind;
+    private boolean valueSeen;
+    private byte[] value;
+    private String valueError;
+    private boolean indexSeen;
+    private Integer accountIndex;
+    private boolean pathSeen;
+    private String path;
+
+    private SeedBuilder(final int index) {
+      this.index = index;
+    }
+
+    private void read(final JsonIterator ji) {
+      if (ji.whatIsNext() != ValueType.OBJECT) {
+        ji.skip();
+        malformed = true;
+        return;
+      }
+      ji.testObject((buf, offset, len, iterator) -> {
+        final var field = new String(buf, offset, len);
+        if (!fields.add(field)) {
+          // a document that names a field twice is refused, so no value is read twice into a
+          // half-updated holder
+          if (duplicateField == null) {
+            duplicateField = field;
+          }
+          iterator.skip();
+          return true;
+        }
+        if (fieldEquals("kind", buf, offset, len)) {
+          kindSeen = true;
+          if (iterator.whatIsNext() == ValueType.STRING) {
+            kind = iterator.readString();
+          } else {
+            kindMalformed = true;
+            kind = DocumentBuilder.describeSkipped(iterator);
+          }
+        } else if (fieldEquals("value", buf, offset, len)) {
+          valueSeen = true;
+          try {
+            value = byteArray(iterator, "", "value");
+          } catch (final MappingDocumentException e) {
+            valueError = e.detail();
+          }
+        } else if (fieldEquals("index", buf, offset, len)) {
+          indexSeen = true;
+          try {
+            accountIndex = nonNegativeInteger(iterator, "", "index");
+          } catch (final MappingDocumentException ignored) {
+            // absent and malformed read the same: the build names the field once
+          }
+        } else if (fieldEquals("path", buf, offset, len)) {
+          pathSeen = true;
+          try {
+            path = nonBlankString(iterator, "", "path");
+          } catch (final MappingDocumentException ignored) {
+            // absent and malformed read the same: the build names the field once
+          }
+        } else {
+          if (unknownField == null) {
+            unknownField = unknownField(buf, offset, len);
+          }
+          iterator.skip();
+        }
+        return true;
+      });
+    }
+
+    private Derivation.Seed build(final String at) {
+      if (malformed) {
+        throw refuse(at, "must be an object");
+      }
+      if (duplicateField != null) {
+        throw refuse(at, "duplicate field \"" + duplicateField + "\"");
+      }
+      if (unknownField != null) {
+        throw refuse(at, unknownField);
+      }
+      if (!kindSeen) {
+        throw refuse(at, "the seed has no kind");
+      }
+      if (kindMalformed) {
+        throw refuse(at, "unknown seed kind " + kind);
+      }
+      switch (kind) {
+        case "const" -> {
+          if (indexSeen) {
+            throw refuse(at, "a const seed carries no \"index\"");
+          }
+          if (pathSeen) {
+            throw refuse(at, "a const seed carries no \"path\"");
+          }
+          if (valueError != null) {
+            throw refuse(at, valueError);
+          }
+          if (value == null) {
+            throw refuse(at, "value must be an array");
+          }
+          return new Derivation.Const(value);
+        }
+        case "account" -> {
+          if (valueSeen) {
+            throw refuse(at, "an account seed carries no \"value\"");
+          }
+          if (pathSeen) {
+            throw refuse(at, "an account seed carries no \"path\"");
+          }
+          if (accountIndex == null) {
+            throw refuse(at, "index must be a non-negative integer");
+          }
+          return new Derivation.Account(accountIndex);
+        }
+        case "arg" -> {
+          if (valueSeen) {
+            throw refuse(at, "an arg seed carries no \"value\"");
+          }
+          if (indexSeen) {
+            throw refuse(at, "an arg seed carries no \"index\"");
+          }
+          if (path == null) {
+            throw refuse(at, "path must be a non-blank string");
+          }
+          return new Derivation.Arg(path);
+        }
+        case null -> throw refuse(at, "unknown seed kind null");
+        default -> throw refuse(at, "unknown seed kind " + kind);
       }
     }
   }
@@ -1494,6 +1782,62 @@ public final class MappingDocumentParser {
         lastOmittableSource = source;
       } else if (omittableSeen) {
         throw refuse(at, "seat " + seat.index() + " follows a seat a client may leave out; an absent one would shift it");
+      }
+    }
+    validateSuppliedAtAnAccountIndex(sources, seats, at);
+  }
+
+  /// The longest seed a program-derived address takes.
+  private static final int MAX_SEED_LENGTH = 32;
+
+  /// A supplied account at an account index never signs, and its derivation is one a mapper
+  /// hands the supplier whole: every account seed names an account index inside the list
+  /// that the mapper fills itself (not one the context supplies, whose address is the
+  /// supplier's own answer, and not one a client may leave out, which has no address when it
+  /// is absent), and no constant seed is longer than a seed may be. The other checks ran
+  /// first, so the account indexes are dense from 0 and each is listed once.
+  private static void validateSuppliedAtAnAccountIndex(final List<SourceAccount> sources,
+                                                       final List<DestinationAccount> destinations,
+                                                       final String at) {
+    for (final var destination : destinations) {
+      if (destination instanceof DestinationAccount.Supplied account && account.signer()) {
+        throw refuse(at, "the supplied account at account index " + account.index() + " signs; a supplied account never signs");
+      }
+    }
+    final var byIndex = new DestinationAccount[destinations.size()];
+    for (final var destination : destinations) {
+      byIndex[destination.index()] = destination;
+    }
+    for (final var destination : destinations) {
+      if (!(destination instanceof DestinationAccount.Supplied account) || account.derivation() == null) {
+        continue;
+      }
+      final var what = "the supplied account at account index " + account.index();
+      for (final var seed : account.derivation().seeds()) {
+        switch (seed) {
+          case Derivation.Account named -> {
+            final int index = named.index();
+            if (index >= byIndex.length) {
+              throw refuse(at, what + " derives from account index " + index + ", which is out of range of " + byIndex.length);
+            }
+            final var other = byIndex[index];
+            if (other instanceof DestinationAccount.Supplied) {
+              throw refuse(at, what + " derives from account index " + index
+                  + ", which the context supplies; a mapper resolves no supplied account for another");
+            }
+            if (other instanceof DestinationAccount.Source forward && sources.get(forward.source()).optional() == OptionalKind.OMITTED) {
+              throw refuse(at, what + " derives from account index " + index + ", which a client may leave out");
+            }
+          }
+          case Derivation.Const constant -> {
+            if (constant.value().length > MAX_SEED_LENGTH) {
+              throw refuse(at, what + " has a constant seed longer than " + MAX_SEED_LENGTH + " bytes");
+            }
+          }
+          case Derivation.Arg _ -> {
+            // a path the mapper does not read: a supplier that reads the data resolves it
+          }
+        }
       }
     }
   }

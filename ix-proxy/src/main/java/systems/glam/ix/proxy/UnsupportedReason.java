@@ -16,9 +16,10 @@ public enum UnsupportedReason {
   /// The instruction carries accounts beyond the list and the document forbids them.
   REMAINING_ACCOUNTS("remaining_accounts"),
   /// The context supplies no address for a GLAM account the document seats, or no accounts
-  /// for an entry that lists supplied ones.
+  /// for an entry with supplied accounts, listed after the declared accounts or at an
+  /// account index.
   CONTEXT("context"),
-  /// The context supplied the wrong number of accounts for an entry that lists supplied ones,
+  /// The context supplied the wrong number of accounts for an entry with supplied accounts,
   /// or a null one.
   SUPPLIED_ACCOUNTS("supplied_accounts"),
   /// The instruction itself cannot be read: its data span lies outside its buffer, or an

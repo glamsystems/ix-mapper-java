@@ -32,11 +32,12 @@ consumer.
   `systems.glam.ix.proxy`) — the whole library. The document model (sealed
   `InstructionEntry`, `DestinationAccount`, `Expectation`; records
   `MappingDocument`, `SourceAccount`, `SuppliedAccount`, `Handler`,
-  `Provenance`), the parser (`MappingDocumentParser`, `MappingDocuments` for
-  files), the mapper (`InstructionMapper` over `DocumentMapper`,
-  `MappingContext`, `SuppliedAccountsRequest`, sealed `MapResult`,
-  `UnsupportedReason`, `UnsupportedInstructionException`) and
-  `MappingDocumentException` for a document that does not admit.
+  `Provenance`, `Derivation` with its sealed `Seed`), the parser
+  (`MappingDocumentParser`, `MappingDocuments` for files), the mapper
+  (`InstructionMapper` over `DocumentMapper`, `MappingContext`,
+  `SuppliedAccountsRequest`, sealed `MapResult`, `UnsupportedReason`,
+  `UnsupportedInstructionException`) and `MappingDocumentException` for a
+  document that does not admit.
 - `ix-mapper-ts/` — the generated documents
   (`src/generated/mapping/{production,staging}`), the conformance cases
   (`test/data/cases`) and the mapping vectors (`test/data/vectors`) of the

@@ -54,7 +54,21 @@ final class MappingConfigFuzzSeedsTests {
       Map.entry("supplied-behind-omittable-seat", refused(FIRST_ENTRY
           + ": supplied_accounts follow seat 5, which a client may leave out; an absent one would shift them")),
       Map.entry("supplied-of-program-id", refused(FIRST_ENTRY
-          + ": supplied_accounts[0] names source position 2, which a client may pass as the program id; an absent optional names no account"))
+          + ": supplied_accounts[0] names source position 2, which a client may pass as the program id; an absent optional names no account")),
+      Map.entry("cctp-production.json", admits(25)),
+      Map.entry("supplied-at-account-index", admits(2)),
+      Map.entry("supplied-at-account-index-signs", refused(FIRST_ENTRY
+          + ": the supplied account at account index 2 signs; a supplied account never signs")),
+      Map.entry("supplied-at-account-index-from-a-supplied-account", refused(FIRST_ENTRY
+          + ": the supplied account at account index 2 derives from account index 4, which the context supplies; a mapper resolves no supplied account for another")),
+      Map.entry("supplied-at-account-index-out-of-range", refused(FIRST_ENTRY
+          + ": the supplied account at account index 2 derives from account index 7, which is out of range of 7")),
+      Map.entry("supplied-at-account-index-from-an-omittable-position", refused(FIRST_ENTRY
+          + ": the supplied account at account index 2 derives from account index 7, which a client may leave out")),
+      Map.entry("supplied-at-account-index-long-constant", refused(FIRST_ENTRY
+          + ": the supplied account at account index 2 has a constant seed longer than 32 bytes")),
+      Map.entry("supplied-at-account-index-unknown-seed-kind", refused(FIRST_ENTRY
+          + " destination_accounts[2] derivation seeds[0]: unknown seed kind pda"))
   );
 
   @TestFactory

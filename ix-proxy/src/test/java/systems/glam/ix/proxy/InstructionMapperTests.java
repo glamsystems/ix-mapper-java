@@ -900,4 +900,523 @@ final class InstructionMapperTests {
     assertNull(withAuthority.suppliedAccounts());
     assertEquals(THING, withAuthority.integrationAuthority().apply(PROXY));
   }
+
+  private static final PublicKey ROUTES = PublicKey.fromBase58Encoded("Routes1111111111111111111111111111111111111");
+  private static final PublicKey LEDGER = PublicKey.fromBase58Encoded("Ledger1111111111111111111111111111111111111");
+  private static final PublicKey FIXED = PublicKey.fromBase58Encoded("Fixed11111111111111111111111111111111111111");
+  private static final PublicKey MAYBE = PublicKey.fromBase58Encoded("Maybe11111111111111111111111111111111111111");
+  private static final PublicKey EXTRA = PublicKey.fromBase58Encoded("Extra11111111111111111111111111111111111111");
+  /// "routes"
+  private static final byte[] ROUTES_SEED = {114, 111, 117, 116, 101, 115};
+
+  /// An entry that supplies two accounts at an account index and lists two more: `routes` at
+  /// account index 2, read-only, derived under the proxy program from a constant, the accounts
+  /// at account indexes 0 (a GLAM account), 1 (a fixed address), 3 (a forwarded one) and 5 (a
+  /// forwarded optional a sentinel may rewrite) and an argument; and `ledger` at 4, writable,
+  /// with no derivation, listed ahead of `routes`, so the request's order is the account
+  /// indexes' and not the list's.
+  private static final String PLACED_DOCUMENT = """
+      {
+        "schema_version": 1, "environment": "test",
+        "program_id": "%1$s", "proxy_program_id": "%2$s",
+        "instructions": [{
+          "name": "route", "discriminator": [6], "disposition": "map",
+          "handler": { "name": "proxy_route", "discriminator": [8, 8] },
+          "source_accounts": [
+            { "name": "mint", "writable": false, "signer": false },
+            { "name": "maybe", "writable": false, "signer": false, "optional": "program_id" }
+          ],
+          "destination_accounts": [
+            { "index": 0, "kind": "dynamic", "name": "glam_state", "writable": true, "signer": false },
+            { "index": 1, "kind": "static", "address": "%3$s", "writable": false, "signer": false },
+            { "index": 4, "kind": "supplied", "role": "ledger", "writable": true, "signer": false },
+            {
+              "index": 2, "kind": "supplied", "role": "routes", "writable": false, "signer": false,
+              "derivation": {
+                "program": "%2$s",
+                "seeds": [
+                  { "kind": "const", "value": [114, 111, 117, 116, 101, 115] },
+                  { "kind": "account", "index": 0 },
+                  { "kind": "account", "index": 1 },
+                  { "kind": "account", "index": 3 },
+                  { "kind": "account", "index": 5 },
+                  { "kind": "arg", "path": "params.protocol" }
+                ]
+              }
+            },
+            { "index": 3, "kind": "source", "source": 0, "writable": false, "signer": false },
+            { "index": 5, "kind": "source", "source": 1, "writable": false, "signer": false, "sentinel": true }
+          ],
+          "supplied_accounts": [
+            { "role": "asset_oracle", "of": [0] },
+            { "role": "sol_usd_oracle", "optional": true }
+          ]
+        }]
+      }
+      """;
+
+  private static InstructionMapper placedMapper() {
+    return InstructionMapper.createMapper(List.of(MappingDocumentParser.parse(
+        PLACED_DOCUMENT.formatted(PROGRAM.toBase58(), PROXY.toBase58(), FIXED.toBase58()), "route"
+    )));
+  }
+
+  /// `route` with the mint, the optional at position 1, and an account beyond the list.
+  private static Instruction routeInstruction(final PublicKey maybe) {
+    return Instruction.createInstruction(
+        PROGRAM,
+        List.of(AccountMeta.createRead(MINT_A), AccountMeta.createRead(maybe), AccountMeta.createWrite(EXTRA)),
+        new byte[]{6, 5}
+    );
+  }
+
+  /// The role `routes` the request names, its derivation resolved with what the mapper placed
+  /// at account index 5.
+  private static SuppliedAccountsRequest.Role routesRole(final PublicKey atFive) {
+    return new SuppliedAccountsRequest.Role("routes", List.of(), false, new SuppliedAccountsRequest.Derivation(PROXY, List.of(
+        new SuppliedAccountsRequest.Const(ROUTES_SEED),
+        new SuppliedAccountsRequest.Account(STATE),
+        new SuppliedAccountsRequest.Account(FIXED),
+        new SuppliedAccountsRequest.Account(MINT_A),
+        new SuppliedAccountsRequest.Account(atFive),
+        new SuppliedAccountsRequest.Arg("params.protocol")
+    )));
+  }
+
+  /// The supplier's answer for an account at an account index takes that account index, with
+  /// the handler's writable flag and unsigned; the rest of the answer follows the declared
+  /// accounts, read-only and unsigned, and the accounts beyond the list follow it.
+  @Test
+  void aSuppliedAccountAtItsAccountIndexIsPlacedThere() {
+    final var requests = new java.util.ArrayList<SuppliedAccountsRequest>();
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      requests.add(request);
+      return List.of(ROUTES, LEDGER, PRICE_A, SOL_USD);
+    });
+    final var mapped = assertInstanceOf(MapResult.Mapped.class, placedMapper().map(routeInstruction(MAYBE), context));
+    assertEquals(List.of(
+        AccountMeta.createWrite(STATE),
+        AccountMeta.createRead(FIXED),
+        AccountMeta.createRead(ROUTES),
+        AccountMeta.createRead(MINT_A),
+        AccountMeta.createWrite(LEDGER),
+        AccountMeta.createRead(MAYBE),
+        AccountMeta.createRead(PRICE_A),
+        AccountMeta.createRead(SOL_USD),
+        AccountMeta.createWrite(EXTRA)
+    ), mapped.instruction().accounts());
+    assertArrayEquals(new byte[]{8, 8, 5}, mapped.instruction().data());
+    assertEquals("proxy_route", mapped.handler());
+    assertEquals(1, requests.size(), "one request for the entry");
+  }
+
+  /// The request names the accounts at an account index first, in account-index order, each
+  /// with no `of` addresses, required, and its derivation resolved to what the mapper placed:
+  /// the constant's bytes, the context's state, the fixed address, the forwarded accounts, the
+  /// argument's path unread; then the supplied accounts the entry lists, with none.
+  @Test
+  void theRequestNamesTheAccountsAtAnAccountIndexFirstWithTheirDerivationsResolved() {
+    final var requests = new java.util.ArrayList<SuppliedAccountsRequest>();
+    final var instruction = routeInstruction(MAYBE);
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      requests.add(request);
+      return List.of(ROUTES, LEDGER, PRICE_A);
+    });
+    assertInstanceOf(MapResult.Mapped.class, placedMapper().map(instruction, context));
+    final var request = requests.getFirst();
+    assertEquals(PROXY, request.proxyProgram());
+    assertEquals(PROGRAM, request.program());
+    assertEquals("route", request.source());
+    assertEquals("proxy_route", request.handler());
+    assertSame(instruction, request.instruction());
+    assertEquals(List.of(
+        routesRole(MAYBE),
+        new SuppliedAccountsRequest.Role("ledger", List.of(), false),
+        new SuppliedAccountsRequest.Role("asset_oracle", List.of(MINT_A), false),
+        new SuppliedAccountsRequest.Role("sol_usd_oracle", List.of(), true)
+    ), request.roles());
+    assertNull(request.roles().get(1).derivation());
+    assertNull(request.roles().get(2).derivation());
+  }
+
+  /// Where a sentinel rewrote an absent optional to the proxy program, a seed naming its
+  /// account index resolves to the proxy program, what the mapper placed there.
+  @Test
+  void aSeedResolvesToTheProxyProgramWhereASentinelRewroteTheAccount() {
+    final var requests = new java.util.ArrayList<SuppliedAccountsRequest>();
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      requests.add(request);
+      return List.of(ROUTES, LEDGER, PRICE_A);
+    });
+    final var mapped = assertInstanceOf(MapResult.Mapped.class, placedMapper().map(routeInstruction(PROGRAM), context));
+    assertEquals(AccountMeta.createRead(PROXY), mapped.instruction().accounts().get(5));
+    assertEquals(routesRole(PROXY), requests.getFirst().roles().getFirst());
+  }
+
+  /// The accounts at an account index are required and named first in the count, the optional
+  /// tail of the listed ones may still be left out, and a null anywhere in the answer is
+  /// refused at its place in the answer.
+  @Test
+  void theAccountsAtAnAccountIndexAreRequiredAndNamedFirst() {
+    final var mapper = placedMapper();
+    final var count = "route takes 3 to 4 supplied accounts (routes, ledger, asset_oracle, sol_usd_oracle?); the context supplied ";
+    for (final var answer : List.of(List.<PublicKey>of(), List.of(ROUTES, LEDGER), List.of(ROUTES, LEDGER, PRICE_A, SOL_USD, THING))) {
+      final var refused = assertInstanceOf(MapResult.Unsupported.class,
+          mapper.map(routeInstruction(MAYBE), new MappingContext(STATE, VAULT, SIGNER, null, request -> answer)));
+      assertEquals(UnsupportedReason.SUPPLIED_ACCOUNTS, refused.reason());
+      assertEquals(count + answer.size(), refused.message());
+    }
+    final var three = assertInstanceOf(MapResult.Mapped.class,
+        mapper.map(routeInstruction(MAYBE), new MappingContext(STATE, VAULT, SIGNER, null, request -> List.of(ROUTES, LEDGER, PRICE_A))));
+    assertEquals(List.of(
+        AccountMeta.createWrite(STATE),
+        AccountMeta.createRead(FIXED),
+        AccountMeta.createRead(ROUTES),
+        AccountMeta.createRead(MINT_A),
+        AccountMeta.createWrite(LEDGER),
+        AccountMeta.createRead(MAYBE),
+        AccountMeta.createRead(PRICE_A),
+        AccountMeta.createWrite(EXTRA)
+    ), three.instruction().accounts());
+    for (int at = 0; at < 3; at++) {
+      final var answer = new java.util.ArrayList<>(List.of(ROUTES, LEDGER, PRICE_A));
+      answer.set(at, null);
+      final var refused = assertInstanceOf(MapResult.Unsupported.class,
+          mapper.map(routeInstruction(MAYBE), new MappingContext(STATE, VAULT, SIGNER, null, request -> answer)));
+      assertEquals(UnsupportedReason.SUPPLIED_ACCOUNTS, refused.reason());
+      assertEquals("the context supplied a null account at " + at + " for route", refused.message());
+    }
+  }
+
+  /// An entry whose only supplied account is at an account index asks the supplier too, once:
+  /// no supplier, a null answer or a throwing one refuse it for the context, the count names
+  /// the one account in the singular, an account index without a derivation is asked for with
+  /// none, and a refusal at a position or an account index comes before the supplier is asked.
+  @Test
+  void anEntryWhoseOnlySuppliedAccountIsAtAnAccountIndexAsksTheSupplier() {
+    final var json = """
+        {
+          "schema_version": 1, "environment": "test",
+          "program_id": "%s", "proxy_program_id": "%s",
+          "instructions": [{
+            "name": "one", "discriminator": [1], "disposition": "map",
+            "handler": { "name": "proxy_one", "discriminator": [9] },
+            "source_accounts": [{ "name": "thing", "writable": false, "signer": false }],
+            "destination_accounts": [
+              { "index": 0, "kind": "source", "source": 0, "writable": false, "signer": false },
+              { "index": 1, "kind": "supplied", "role": "routes", "writable": false, "signer": false }
+            ],
+            "remaining_accounts": { "kind": "none" }
+          }]
+        }
+        """.formatted(PROGRAM.toBase58(), PROXY.toBase58());
+    final var mapper = InstructionMapper.createMapper(List.of(MappingDocumentParser.parse(json, "one")));
+    final var instruction = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createRead(THING)), new byte[]{1});
+    final var none = assertInstanceOf(MapResult.Unsupported.class, mapper.map(instruction, CONTEXT));
+    assertEquals(UnsupportedReason.CONTEXT, none.reason());
+    assertEquals("the context supplies no accounts for one", none.message());
+    final var unknown = assertInstanceOf(MapResult.Unsupported.class,
+        mapper.map(instruction, new MappingContext(STATE, VAULT, SIGNER, null, request -> null)));
+    assertEquals(UnsupportedReason.CONTEXT, unknown.reason());
+    assertEquals("the context supplies no accounts for one", unknown.message());
+    final var failed = assertInstanceOf(MapResult.Unsupported.class, mapper.map(instruction, new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      throw new IllegalStateException("boom");
+    })));
+    assertEquals(UnsupportedReason.CONTEXT, failed.reason());
+    assertEquals("the context's supplied accounts failed for one: boom", failed.message());
+    final var empty = assertInstanceOf(MapResult.Unsupported.class,
+        mapper.map(instruction, new MappingContext(STATE, VAULT, SIGNER, null, request -> List.of())));
+    assertEquals(UnsupportedReason.SUPPLIED_ACCOUNTS, empty.reason());
+    assertEquals("one takes 1 supplied account (routes); the context supplied 0", empty.message());
+    final var requests = new java.util.ArrayList<SuppliedAccountsRequest>();
+    final var served = assertInstanceOf(MapResult.Mapped.class, mapper.map(instruction, new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      requests.add(request);
+      return List.of(ROUTES);
+    })));
+    assertEquals(List.of(AccountMeta.createRead(THING), AccountMeta.createRead(ROUTES)), served.instruction().accounts());
+    assertEquals(List.of(new SuppliedAccountsRequest.Role("routes", List.of(), false)), requests.getFirst().roles());
+    final var signing = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createReadOnlySigner(THING)), new byte[]{1});
+    final var refused = assertInstanceOf(MapResult.Unsupported.class, mapper.map(signing, new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      requests.add(request);
+      return List.of(ROUTES);
+    })));
+    assertEquals(UnsupportedReason.ACCOUNT_PRIVILEGE, refused.reason());
+    assertEquals(1, requests.size(), "a refusal at a position comes before the supplier is asked");
+    final var beyond = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createRead(THING), AccountMeta.createRead(EXTRA)), new byte[]{1});
+    final var past = assertInstanceOf(MapResult.Unsupported.class,
+        mapper.map(beyond, new MappingContext(STATE, VAULT, SIGNER, null, request -> List.of(ROUTES))));
+    assertEquals(UnsupportedReason.REMAINING_ACCOUNTS, past.reason());
+  }
+
+  /// A client that leaves out the omittable tail shortens the list after the account index,
+  /// never before it: the supplied account keeps its account index with the handler's
+  /// writable flag, the forwarded account after it keeps its own, nothing stands where the
+  /// tail was, and the request names the account once, required, with no `of` addresses and
+  /// its derivation resolved to what the mapper placed. A client that passes the tail finds
+  /// it after them, with the same request.
+  @Test
+  void aSuppliedAccountAtAnAccountIndexKeepsItWhenTheOmittableTailIsAbsent() {
+    final var json = """
+        {
+          "schema_version": 1, "environment": "test",
+          "program_id": "%1$s", "proxy_program_id": "%2$s",
+          "instructions": [{
+            "name": "deposit", "discriminator": [7], "disposition": "map",
+            "handler": { "name": "proxy_deposit", "discriminator": [9, 9] },
+            "source_accounts": [
+              { "name": "mint", "writable": false, "signer": false },
+              { "name": "referrer", "writable": false, "signer": false, "optional": "omitted" }
+            ],
+            "destination_accounts": [
+              { "index": 0, "kind": "dynamic", "name": "glam_state", "writable": true, "signer": false },
+              {
+                "index": 1, "kind": "supplied", "role": "routes", "writable": true, "signer": false,
+                "derivation": {
+                  "program": "%2$s",
+                  "seeds": [
+                    { "kind": "const", "value": [114, 111, 117, 116, 101, 115] },
+                    { "kind": "account", "index": 2 }
+                  ]
+                }
+              },
+              { "index": 2, "kind": "source", "source": 0, "writable": false, "signer": false },
+              { "index": 3, "kind": "source", "source": 1, "writable": false, "signer": false }
+            ]
+          }]
+        }
+        """.formatted(PROGRAM.toBase58(), PROXY.toBase58());
+    final var mapper = InstructionMapper.createMapper(List.of(MappingDocumentParser.parse(json, "deposit")));
+    final var requests = new java.util.ArrayList<SuppliedAccountsRequest>();
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      requests.add(request);
+      return List.of(ROUTES);
+    });
+    final var roles = List.of(new SuppliedAccountsRequest.Role("routes", List.of(), false, new SuppliedAccountsRequest.Derivation(PROXY, List.of(
+        new SuppliedAccountsRequest.Const(ROUTES_SEED),
+        new SuppliedAccountsRequest.Account(MINT_A)
+    ))));
+    final var left = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createRead(MINT_A)), new byte[]{7, 5});
+    final var absent = assertInstanceOf(MapResult.Mapped.class, mapper.map(left, context));
+    assertEquals(List.of(
+        AccountMeta.createWrite(STATE),
+        AccountMeta.createWrite(ROUTES),
+        AccountMeta.createRead(MINT_A)
+    ), absent.instruction().accounts());
+    assertEquals(1, requests.size(), "one request for the entry");
+    final var request = requests.getFirst();
+    assertSame(left, request.instruction());
+    assertEquals("proxy_deposit", request.handler());
+    assertEquals(roles, request.roles());
+    final var carried = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createRead(MINT_A), AccountMeta.createRead(THING)), new byte[]{7, 5});
+    final var present = assertInstanceOf(MapResult.Mapped.class, mapper.map(carried, context));
+    assertEquals(List.of(
+        AccountMeta.createWrite(STATE),
+        AccountMeta.createWrite(ROUTES),
+        AccountMeta.createRead(MINT_A),
+        AccountMeta.createRead(THING)
+    ), present.instruction().accounts());
+    assertEquals(2, requests.size());
+    assertEquals(roles, requests.getLast().roles());
+  }
+
+  /// The supplier is asked once every account index is placed, so a refusal at an account
+  /// index after the one the context supplies comes first and leaves the supplier unasked:
+  /// a forwarded account that does not sign where the handler needs it signed, or signs
+  /// where the handler takes it unsigned, a GLAM account the context has no address for or
+  /// whose lookup fails, and, earlier still, an expectation at the position forwarded to a
+  /// later account index. With none of them the same supplier is asked, once.
+  @Test
+  void aRefusalAtALaterAccountIndexComesBeforeTheSupplierIsAsked() {
+    final var json = """
+        {
+          "schema_version": 1, "environment": "test",
+          "program_id": "%s", "proxy_program_id": "%s",
+          "instructions": [{
+            "name": "deposit", "discriminator": [7], "disposition": "map",
+            "handler": { "name": "proxy_deposit", "discriminator": [9, 9] },
+            "source_accounts": [
+              { "name": "authority", "writable": false, "signer": true },
+              { "name": "pool", "writable": false, "signer": false, "expect": "glam_vault" }
+            ],
+            "destination_accounts": [
+              { "index": 0, "kind": "dynamic", "name": "glam_state", "writable": true, "signer": false },
+              { "index": 1, "kind": "supplied", "role": "routes", "writable": false, "signer": false },
+              { "index": 2, "kind": "source", "source": 0, "writable": false, "signer": true },
+              { "index": 3, "kind": "source", "source": 1, "writable": false, "signer": false },
+              { "index": 4, "kind": "dynamic", "name": "integration_authority", "writable": false, "signer": false }
+            ]
+          }]
+        }
+        """.formatted(PROGRAM.toBase58(), PROXY.toBase58());
+    final var mapper = InstructionMapper.createMapper(List.of(MappingDocumentParser.parse(json, "deposit")));
+    final var authority = PublicKey.fromBase58Encoded("Authority1111111111111111111111111111111111");
+    final var asked = new java.util.concurrent.atomic.AtomicInteger();
+    final java.util.function.Function<SuppliedAccountsRequest, List<PublicKey>> supplier = request -> {
+      asked.incrementAndGet();
+      return List.of(ROUTES);
+    };
+    final var context = new MappingContext(STATE, VAULT, SIGNER, Map.of(PROXY, THING)::get, supplier);
+    final var unsigned = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createRead(authority), AccountMeta.createRead(VAULT)), new byte[]{7});
+    final var mustSign = assertInstanceOf(MapResult.Unsupported.class, mapper.map(unsigned, context));
+    assertEquals(UnsupportedReason.ACCOUNT_PRIVILEGE, mustSign.reason());
+    assertEquals("deposit account 0 (authority) must sign", mustSign.message());
+    final var signing = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createReadOnlySigner(authority), AccountMeta.createReadOnlySigner(VAULT)), new byte[]{7});
+    final var signs = assertInstanceOf(MapResult.Unsupported.class, mapper.map(signing, context));
+    assertEquals(UnsupportedReason.ACCOUNT_PRIVILEGE, signs.reason());
+    assertEquals("deposit account 1 (pool) signs, but the handler takes it unsigned", signs.message());
+    final var sound = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createReadOnlySigner(authority), AccountMeta.createRead(VAULT)), new byte[]{7});
+    final var absent = assertInstanceOf(MapResult.Unsupported.class, mapper.map(sound, new MappingContext(STATE, VAULT, SIGNER, null, supplier)));
+    assertEquals(UnsupportedReason.CONTEXT, absent.reason());
+    assertEquals("the context supplies no integration_authority for " + PROXY.toBase58(), absent.message());
+    final var failing = new MappingContext(STATE, VAULT, SIGNER, proxy -> {
+      throw new IllegalStateException("boom");
+    }, supplier);
+    final var failed = assertInstanceOf(MapResult.Unsupported.class, mapper.map(sound, failing));
+    assertEquals(UnsupportedReason.CONTEXT, failed.reason());
+    assertEquals("the context's integration authority failed for " + PROXY.toBase58() + ": boom", failed.message());
+    final var elsewhere = Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createReadOnlySigner(authority), AccountMeta.createRead(THING)), new byte[]{7});
+    final var expected = assertInstanceOf(MapResult.Unsupported.class, mapper.map(elsewhere, context));
+    assertEquals(UnsupportedReason.ACCOUNT_EXPECTATION, expected.reason());
+    assertEquals("deposit account 1 (pool) must be glam_vault", expected.message());
+    assertEquals(0, asked.get(), "a refusal at a later account index leaves the supplier unasked");
+    final var mapped = assertInstanceOf(MapResult.Mapped.class, mapper.map(sound, context));
+    assertEquals(List.of(
+        AccountMeta.createWrite(STATE),
+        AccountMeta.createRead(ROUTES),
+        AccountMeta.createReadOnlySigner(authority),
+        AccountMeta.createRead(VAULT),
+        AccountMeta.createRead(THING)
+    ), mapped.instruction().accounts());
+    assertEquals(1, asked.get(), "with nothing refused, the same supplier is asked once");
+  }
+
+  /// A document built from records holds its accounts at an account index to the parser's
+  /// rules when a mapper is created over it: one that signs, or a derivation naming an account
+  /// index past the list, one the context supplies or one a client may leave out, or a
+  /// constant longer than 32 bytes, forms no mapper; one that keeps them does.
+  @Test
+  void aDocumentBuiltFromRecordsHoldsItsAccountsAtAnAccountIndexToTheRules() {
+    final var thing = new SourceAccount("thing", true, false, false, null, null);
+    final var trailing = new SourceAccount("trailing", false, false, false, OptionalKind.OMITTED, null);
+    final var state = new DestinationAccount.Dynamic(0, DynamicAccountName.GLAM_STATE, false, false);
+    final var forwarded = new DestinationAccount.Source(2, 0, true, false, false);
+    final java.util.function.Function<Derivation.Seed, DestinationAccount> derivedFrom = seed ->
+        new DestinationAccount.Supplied(1, "routes", false, false, new Derivation(PROXY, List.of(seed)));
+    final var rows = List.of(
+        java.util.Map.entry(
+            withSupplied(List.of(thing), List.of(state, new DestinationAccount.Supplied(1, "routes", false, true, null), forwarded)),
+            "the supplied account at account index 1 signs; a supplied account never signs"),
+        java.util.Map.entry(
+            withSupplied(List.of(thing), List.of(state, derivedFrom.apply(new Derivation.Account(3)), forwarded)),
+            "the supplied account at account index 1 derives from account index 3, which is out of range of 3"),
+        java.util.Map.entry(
+            withSupplied(List.of(thing), List.of(state, derivedFrom.apply(new Derivation.Account(1)), forwarded)),
+            "the supplied account at account index 1 derives from account index 1, which the context supplies; a mapper resolves no supplied account for another"),
+        java.util.Map.entry(
+            withSupplied(List.of(thing, trailing), List.of(state, derivedFrom.apply(new Derivation.Account(3)), forwarded,
+                new DestinationAccount.Source(3, 1, false, false, false))),
+            "the supplied account at account index 1 derives from account index 3, which a client may leave out"),
+        java.util.Map.entry(
+            withSupplied(List.of(thing), List.of(state, derivedFrom.apply(new Derivation.Const(new byte[33])), forwarded)),
+            "the supplied account at account index 1 has a constant seed longer than 32 bytes")
+    );
+    for (final var row : rows) {
+      final var refused = assertThrows(MappingDocumentException.class, () -> InstructionMapper.createMapper(List.of(
+          new MappingDocument(1, "test", PROGRAM, PROXY, null, List.of(row.getKey())))), row.getValue());
+      assertEquals(PROGRAM.toBase58() + " instructions[0]", refused.at());
+      assertEquals(row.getValue(), refused.detail());
+    }
+    final var sound = withSupplied(List.of(thing), List.of(state, new DestinationAccount.Supplied(1, "routes", true, false, new Derivation(PROXY, List.of(
+        new Derivation.Const(new byte[32]), new Derivation.Account(0), new Derivation.Account(2), new Derivation.Arg("params.protocol")
+    ))), forwarded));
+    final var mapper = InstructionMapper.createMapper(List.of(new MappingDocument(1, "test", PROGRAM, PROXY, null, List.of(sound))));
+    final var requests = new java.util.ArrayList<SuppliedAccountsRequest>();
+    final var mapped = assertInstanceOf(MapResult.Mapped.class, mapper.map(
+        Instruction.createInstruction(PROGRAM, List.of(AccountMeta.createWrite(THING)), new byte[]{7}),
+        new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+          requests.add(request);
+          return List.of(ROUTES);
+        })));
+    assertEquals(List.of(AccountMeta.createRead(STATE), AccountMeta.createWrite(ROUTES), AccountMeta.createWrite(THING)),
+        mapped.instruction().accounts());
+    assertEquals(new SuppliedAccountsRequest.Derivation(PROXY, List.of(
+        new SuppliedAccountsRequest.Const(new byte[32]), new SuppliedAccountsRequest.Account(STATE),
+        new SuppliedAccountsRequest.Account(THING), new SuppliedAccountsRequest.Arg("params.protocol")
+    )), requests.getFirst().roles().getFirst().derivation());
+  }
+
+  /// The generator's CCTP document (a committed seed of the mappingConfig corpus): a
+  /// `deposit_for_burn` maps with the supplier's `bridge_routes` at account index 7, read-only,
+  /// asked for alone and with its derivation resolved to "bridge-routes", the vault's state
+  /// and the protocol's two bytes; CCTP's accounts follow it one account index later.
+  @Test
+  void theGeneratedCctpDocumentPlacesBridgeRoutesAtAccountIndexSeven() {
+    final var document = MappingDocuments.read(java.nio.file.Path.of("src/test/resources/fuzz/mappingConfig/cctp-production.json"));
+    final var mapper = InstructionMapper.createMapper(List.of(document));
+    final var transmitter = PublicKey.fromBase58Encoded("CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC");
+    final var minter = PublicKey.fromBase58Encoded("CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe");
+    final var tokenProgram = PublicKey.fromBase58Encoded("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+    final var systemProgram = PublicKey.fromBase58Encoded("11111111111111111111111111111111");
+    final var authority = PublicKey.fromBase58Encoded("Maybe11111111111111111111111111111111111111");
+    final var cctp = new PublicKey[17];
+    for (int i = 0; i < cctp.length; i++) {
+      cctp[i] = IxMapperFuzz.key(40 + i);
+    }
+    final var accounts = new java.util.ArrayList<AccountMeta>();
+    accounts.add(AccountMeta.createReadOnlySigner(VAULT));
+    accounts.add(AccountMeta.createWritableSigner(SIGNER));
+    for (int i = 2; i <= 10; i++) {
+      accounts.add(AccountMeta.createRead(cctp[i]));
+    }
+    accounts.add(AccountMeta.createWritableSigner(cctp[11]));
+    accounts.add(AccountMeta.createRead(transmitter));
+    accounts.add(AccountMeta.createRead(minter));
+    accounts.add(AccountMeta.createRead(tokenProgram));
+    accounts.add(AccountMeta.createRead(systemProgram));
+    accounts.add(AccountMeta.createRead(cctp[16]));
+    accounts.add(AccountMeta.createRead(minter));
+    final var instruction = Instruction.createInstruction(minter, accounts, new byte[]{(byte) 215, 60, 61, 46, 114, 55, (byte) 128, (byte) 176, 1, 2, 3});
+    final var requests = new java.util.ArrayList<SuppliedAccountsRequest>();
+    final var context = new MappingContext(STATE, VAULT, SIGNER, Map.of(document.proxyProgramId(), authority)::get, request -> {
+      requests.add(request);
+      return List.of(ROUTES);
+    });
+    final var mapped = assertInstanceOf(MapResult.Mapped.class, mapper.map(instruction, context));
+    assertEquals("cctp_deposit_for_burn", mapped.handler());
+    assertEquals(document.proxyProgramId(), mapped.instruction().programId().publicKey());
+    assertArrayEquals(new byte[]{(byte) 132, 90, 36, 35, 103, (byte) 197, (byte) 143, 91, 1, 2, 3}, mapped.instruction().data());
+    assertEquals(List.of(
+        AccountMeta.createWrite(STATE),
+        AccountMeta.createWrite(VAULT),
+        AccountMeta.createWritableSigner(SIGNER),
+        AccountMeta.createRead(authority),
+        AccountMeta.createRead(minter),
+        AccountMeta.createRead(PublicKey.fromBase58Encoded("GLAMpaME8wdTEzxtiYEAa5yD8fZbxZiz2hNtV58RZiEz")),
+        AccountMeta.createRead(systemProgram),
+        AccountMeta.createRead(ROUTES),
+        AccountMeta.createRead(cctp[2]),
+        AccountMeta.createWrite(cctp[3]),
+        AccountMeta.createRead(cctp[4]),
+        AccountMeta.createWrite(cctp[5]),
+        AccountMeta.createRead(cctp[6]),
+        AccountMeta.createRead(cctp[7]),
+        AccountMeta.createRead(cctp[8]),
+        AccountMeta.createWrite(cctp[9]),
+        AccountMeta.createWrite(cctp[10]),
+        AccountMeta.createWritableSigner(cctp[11]),
+        AccountMeta.createRead(transmitter),
+        AccountMeta.createRead(minter),
+        AccountMeta.createRead(tokenProgram),
+        AccountMeta.createRead(cctp[16])
+    ), mapped.instruction().accounts());
+    assertEquals(1, requests.size());
+    assertEquals(List.of(new SuppliedAccountsRequest.Role("bridge_routes", List.of(), false, new SuppliedAccountsRequest.Derivation(
+        document.proxyProgramId(),
+        List.of(
+            new SuppliedAccountsRequest.Const("bridge-routes".getBytes(java.nio.charset.StandardCharsets.US_ASCII)),
+            new SuppliedAccountsRequest.Account(STATE),
+            new SuppliedAccountsRequest.Const(new byte[]{1, 0})
+        )
+    ))), requests.getFirst().roles());
+  }
 }

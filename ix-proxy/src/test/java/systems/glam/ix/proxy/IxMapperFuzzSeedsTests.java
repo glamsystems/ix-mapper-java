@@ -46,6 +46,7 @@ final class IxMapperFuzzSeedsTests {
   }
 
   private static final String PRICED_COUNT = "priced takes 2 to 3 supplied accounts (price_oracle, reserve, market?); the context supplied ";
+  private static final String ROUTED_COUNT = "routed takes 2 to 3 supplied accounts (routes, ledger, oracle?); the context supplied ";
 
   private static final Map<String, Outcome> EXPECTED = Map.ofEntries(
       Map.entry("a-full-every-position", mapped("full", 0)),
@@ -71,6 +72,15 @@ final class IxMapperFuzzSeedsTests {
       Map.entry("a-priced-too-many", refused("priced", UnsupportedReason.SUPPLIED_ACCOUNTS, PRICED_COUNT + 4, 1)),
       Map.entry("a-priced-null-element", refused("priced", UnsupportedReason.SUPPLIED_ACCOUNTS,
           "the context supplied a null account at 2 for priced", 1)),
+      Map.entry("a-routed-all", mapped("routed", 1)),
+      Map.entry("a-routed-required-only", mapped("routed", 1)),
+      Map.entry("a-routed-sentinel-rewrite", mapped("routed", 1)),
+      Map.entry("a-routed-remaining-accounts", mapped("routed", 1)),
+      Map.entry("a-routed-no-supplier", refused("routed", UnsupportedReason.CONTEXT,
+          "the context supplies no accounts for routed", 0)),
+      Map.entry("a-routed-too-few", refused("routed", UnsupportedReason.SUPPLIED_ACCOUNTS, ROUTED_COUNT + 1, 1)),
+      Map.entry("a-routed-null-element", refused("routed", UnsupportedReason.SUPPLIED_ACCOUNTS,
+          "the context supplied a null account at 2 for routed", 1)),
       Map.entry("a-passthrough", passthrough("read", "nothing signs")),
       Map.entry("a-refused", refused("other", UnsupportedReason.REFUSED_INSTRUCTION, "no handler", 0)),
       Map.entry("a-unknown-discriminator", refused(null, UnsupportedReason.UNKNOWN_INSTRUCTION,
@@ -118,49 +128,76 @@ final class IxMapperFuzzSeedsTests {
     return PRICED_SUPPLIED.get(i).answer();
   }
 
+  private static PublicKey routedAnswer(final int i) {
+    return ROUTED_ANSWERS.get(i);
+  }
+
   /// The whole mapped account list of every seed that maps.
-  private static final Map<String, List<Meta>> ACCOUNTS = Map.of(
+  private static final Map<String, List<Meta>> ACCOUNTS = Map.ofEntries(
       // the eight seats of `full`
-      "a-full-every-position", List.of(
+      Map.entry("a-full-every-position", List.of(
           read(STATE), write(VAULT), writableSigner(SIGNER), read(AUTHORITY), read(PROGRAM_A),
           write(SIGNER), read(POOL[2]), read(POOL[3])
-      ),
+      )),
       // three accounts: the seat forwarding the omittable position 3 is left out
-      "a-full-omitted-trailing", List.of(
+      Map.entry("a-full-omitted-trailing", List.of(
           read(STATE), write(VAULT), writableSigner(SIGNER), read(AUTHORITY), read(PROGRAM_A),
           write(SIGNER), read(POOL[2])
-      ),
+      )),
       // position 2 holds program A, so the sentinel seat 6 holds the proxy program
-      "a-full-sentinel-rewrite", List.of(
+      Map.entry("a-full-sentinel-rewrite", List.of(
           read(STATE), write(VAULT), writableSigner(SIGNER), read(AUTHORITY), read(PROGRAM_A),
           write(SIGNER), read(PROXY), read(POOL[3])
-      ),
+      )),
       // the eight seats, then accounts 4 to 6 as they came
-      "a-full-remaining-accounts", List.of(
+      Map.entry("a-full-remaining-accounts", List.of(
           read(STATE), write(VAULT), writableSigner(SIGNER), read(AUTHORITY), read(PROGRAM_A),
           write(SIGNER), read(POOL[2]), read(POOL[3]),
           read(POOL[4]), read(POOL[5]), read(POOL[6])
-      ),
+      )),
       // seat 0 forwards position 1, seat 1 the signing payer at position 0
-      "b-strict-exact", List.of(read(SIGNER), writableSigner(VAULT)),
+      Map.entry("b-strict-exact", List.of(read(SIGNER), writableSigner(VAULT))),
       // the caller-chosen signer at position 1 signs, and its unsigned seat 0 keeps the flag
-      "b-strict-signing-thing", List.of(readSigner(SIGNER), writableSigner(VAULT)),
+      Map.entry("b-strict-signing-thing", List.of(readSigner(SIGNER), writableSigner(VAULT))),
       // five seats, the three supplied accounts, the two accounts beyond the list
-      "a-priced-all", List.of(
+      Map.entry("a-priced-all", List.of(
           read(STATE), write(VAULT), writableSigner(SIGNER), write(SIGNER), read(VAULT),
           read(suppliedAnswer(0)), read(suppliedAnswer(1)), read(suppliedAnswer(2)),
           writableSigner(POOL[2]), write(POOL[3])
-      ),
+      )),
       // five seats, the two required supplied accounts
-      "a-priced-required-only", List.of(
+      Map.entry("a-priced-required-only", List.of(
           read(STATE), write(VAULT), writableSigner(SIGNER), write(SIGNER), read(VAULT),
           read(suppliedAnswer(0)), read(suppliedAnswer(1))
-      ),
+      )),
       // the eight seats and nothing after them
-      "a-full-no-supplier", List.of(
+      Map.entry("a-full-no-supplier", List.of(
           read(STATE), write(VAULT), writableSigner(SIGNER), read(AUTHORITY), read(PROGRAM_A),
           write(SIGNER), read(POOL[2]), read(POOL[3])
-      )
+      )),
+      // the answers for `routes` at account index 2 and the writable `ledger` at 5 in place,
+      // then the optional `oracle` the entry lists
+      Map.entry("a-routed-all", List.of(
+          write(STATE), read(PROGRAM_A), read(routedAnswer(0)), read(VAULT), read(SIGNER),
+          write(routedAnswer(1)), read(POOL[2]), read(routedAnswer(2))
+      )),
+      // the two required answers in place, and the optional one left out
+      Map.entry("a-routed-required-only", List.of(
+          write(STATE), read(PROGRAM_A), read(routedAnswer(0)), read(VAULT), read(SIGNER),
+          write(routedAnswer(1)), read(POOL[2])
+      )),
+      // position 2 holds program A, so account index 6 holds the proxy program, which is also
+      // what the derivation of `routes` names there (the supplier checks it)
+      Map.entry("a-routed-sentinel-rewrite", List.of(
+          write(STATE), read(PROGRAM_A), read(routedAnswer(0)), read(VAULT), read(SIGNER),
+          write(routedAnswer(1)), read(PROXY), read(routedAnswer(2))
+      )),
+      // the oracle the entry lists comes before accounts 3 and 4, which follow as they came
+      Map.entry("a-routed-remaining-accounts", List.of(
+          write(STATE), read(PROGRAM_A), read(routedAnswer(0)), read(VAULT), read(SIGNER),
+          write(routedAnswer(1)), read(POOL[2]), read(routedAnswer(2)),
+          read(POOL[3]), read(POOL[4])
+      ))
   );
 
   @TestFactory

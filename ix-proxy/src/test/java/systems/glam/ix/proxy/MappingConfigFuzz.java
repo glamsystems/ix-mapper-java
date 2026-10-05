@@ -48,6 +48,47 @@ public final class MappingConfigFuzz {
             throw new AssertionError("an admitted seat index is out of range");
           }
         }
+        for (final var destination : mapped.destinationAccounts()) {
+          if (destination instanceof DestinationAccount.Supplied supplied) {
+            checkSuppliedAtAnAccountIndex(mapped, supplied);
+          }
+        }
+      }
+    }
+  }
+
+  /// An admitted supplied account at an account index never signs, and its derivation is one
+  /// the mapper's resolution reads without a check of its own: each account seed names an
+  /// account index inside the entry that the context does not supply and a client may not
+  /// leave out (the mapper indexes the accounts it placed), and no constant seed is longer
+  /// than a seed may be.
+  private static void checkSuppliedAtAnAccountIndex(final InstructionEntry.Mapped mapped, final DestinationAccount.Supplied supplied) {
+    if (supplied.signer()) {
+      throw new AssertionError("an admitted supplied account at an account index signs");
+    }
+    if (supplied.derivation() == null) {
+      return;
+    }
+    final var destinations = mapped.destinationAccounts();
+    for (final var seed : supplied.derivation().seeds()) {
+      switch (seed) {
+        case Derivation.Account account -> {
+          final var named = destinations.stream().filter(destination -> destination.index() == account.index()).findFirst();
+          if (named.isEmpty() || named.get() instanceof DestinationAccount.Supplied) {
+            throw new AssertionError("an admitted derivation names account index " + account.index() + ", which the mapper does not fill");
+          }
+          if (named.get() instanceof DestinationAccount.Source forward
+              && mapped.sourceAccounts().get(forward.source()).optional() == OptionalKind.OMITTED) {
+            throw new AssertionError("an admitted derivation names account index " + account.index() + ", which a client may leave out");
+          }
+        }
+        case Derivation.Const constant -> {
+          if (constant.value().length > 32) {
+            throw new AssertionError("an admitted derivation carries a constant seed of " + constant.value().length + " bytes, longer than a seed may be");
+          }
+        }
+        case Derivation.Arg _ -> {
+        }
       }
     }
   }

@@ -14,7 +14,8 @@ public sealed interface InstructionEntry
   Discriminator discriminator();
 
   /// @param suppliedAccounts what the context supplies after the seats, in order; empty when
-  ///                         the handler reads nothing a native instruction does not carry
+  ///                         the handler reads nothing past its declared accounts that a
+  ///                         native instruction does not carry
   record Mapped(String name,
                 Discriminator discriminator,
                 Handler handler,

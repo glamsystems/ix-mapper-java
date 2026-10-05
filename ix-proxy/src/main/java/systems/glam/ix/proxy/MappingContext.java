@@ -14,14 +14,16 @@ import java.util.function.Function;
 ///                             instruction with reason [UnsupportedReason#CONTEXT] rather
 ///                             than escaping (an `Error` propagates).
 /// @param suppliedAccounts     the accounts a document lists as supplied, for an entry that
-///                             lists any: called once per such instruction with the roles and
-///                             the addresses at their `of` positions, answering in the same
-///                             order, the required ones first, a trailing run of optional ones
-///                             left out at will; null when the caller supplies none. A null
-///                             answer, or a supplier that throws an exception, refuses the
-///                             instruction with reason [UnsupportedReason#CONTEXT]; a wrong
-///                             count or a null element with [UnsupportedReason#SUPPLIED_ACCOUNTS];
-///                             neither escapes (an `Error` propagates).
+///                             lists any or supplies one at an account index: called once per
+///                             such instruction with the roles (those at an account index
+///                             first, with their derivations resolved) and the addresses at
+///                             their `of` positions, answering in the same order, the required
+///                             ones first, a trailing run of optional ones left out at will;
+///                             null when the caller supplies none. A null answer, or a
+///                             supplier that throws an exception, refuses the instruction with
+///                             reason [UnsupportedReason#CONTEXT]; a wrong count or a null
+///                             element with [UnsupportedReason#SUPPLIED_ACCOUNTS]; neither
+///                             escapes (an `Error` propagates).
 public record MappingContext(PublicKey glamState,
                              PublicKey glamVault,
                              PublicKey glamSigner,

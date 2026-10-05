@@ -16,7 +16,8 @@ import java.util.List;
 /// The fuzz payload is carved into an instruction against a fixed mapper built from two
 /// documents covering every seat kind, both optional kinds, a sentinel, an expectation, a
 /// caller-chosen signer at a signing and at an unsigned seat, both remaining-accounts rules
-/// and supplied accounts, and mapped under a context whose supplier the payload selects:
+/// and supplied accounts, listed and at an account index with a derivation, and mapped under
+/// a context whose supplier the payload selects:
 /// - byte 0 selects the target program (A, B, or one without a document) in its low two
 ///   bits, and in bits 2 to 4 what the context's supplier does ([Supply], in declaration
 ///   order);
@@ -39,18 +40,21 @@ import java.util.List;
 ///    with the seat's writable flag and the seat's signer flag, which the source account
 ///    must hold, or at a caller-chosen signer's unsigned seat the source account's own; the
 ///    proxy program, read-only, at a sentinel seat whose position holds the source program),
-///    less the omittable positions left out, then the supplier's answer, read-only and
-///    unsigned, then the accounts beyond the list as they came;
-/// 4. an entry that lists supplied accounts maps only under a supplier that answers them
-///    all, or all the required ones, asked once;
-/// 5. a refusal for the context or the supplied accounts comes only from that entry, with
+///    less the omittable positions left out, with the supplier's answer at each account
+///    index the context supplies (the handler's writable flag, unsigned), then the rest of
+///    the supplier's answer, read-only and unsigned, then the accounts beyond the list as
+///    they came;
+/// 4. an entry that asks for supplied accounts, listed or at an account index, maps only
+///    under a supplier that answers them all, or all the required ones, asked once;
+/// 5. a refusal for the context or the supplied accounts comes only from such an entry, with
 ///    the reason its supplier draws ([Supply#refusal]), after asking the supplier once when
 ///    the context has one.
 ///
 /// Whatever the result, the supplier is asked at most once per instruction.
 ///
 /// The supplier asserts its request too: the entry's programs and names, and each role with
-/// the addresses at its `of` positions.
+/// the addresses at its `of` positions and its derivation resolved to the addresses the
+/// mapper placed.
 ///
 /// These properties restate the mapper's rules over the parsed model, so the harness
 /// catches a crash, an escape, a mapped instruction whose shape departs from the document,
@@ -104,6 +108,17 @@ public final class IxMapperFuzz {
   static final int PRICED_REQUIRED = 2;
   /// The key a supplier that answers too many adds past the listed ones.
   static final PublicKey EXTRA = key(18);
+
+  /// Document A's `routed` entry: source discriminator [5], handler discriminator eight 6s.
+  static final byte[] ROUTED_DISCRIMINATOR = {5};
+  static final byte[] PROXY_ROUTED_DISCRIMINATOR = {6, 6, 6, 6, 6, 6, 6, 6};
+  /// The keys the supplier answers for the `routed` entry, in request order: `routes` at
+  /// account index 2 and `ledger` at account index 5, both required, then the optional
+  /// `oracle` the entry lists.
+  static final List<PublicKey> ROUTED_ANSWERS = List.of(key(19), key(20), key(21));
+  static final int ROUTED_REQUIRED = 2;
+  /// The constant seed of `routes`, "routes".
+  static final byte[] ROUTES_SEED = {114, 111, 117, 116, 101, 115};
 
   /// What the context's supplier does when asked.
   enum Supply {
@@ -178,10 +193,45 @@ public final class IxMapperFuzz {
                   { "role": "reserve" },
                   { "role": "market", "of": [1, 0], "optional": true }
                 ]
+              },
+              {
+                "name": "routed", "discriminator": [5], "disposition": "map",
+                "handler": { "name": "proxy_routed", "discriminator": [6, 6, 6, 6, 6, 6, 6, 6] },
+                "source_accounts": [
+                  { "name": "authority", "writable": false, "signer": false },
+                  { "name": "mint", "writable": false, "signer": false },
+                  { "name": "maybe", "writable": false, "signer": false, "optional": "program_id" }
+                ],
+                "destination_accounts": [
+                  { "index": 0, "kind": "dynamic", "name": "glam_state", "writable": true, "signer": false },
+                  { "index": 1, "kind": "static", "address": "%s", "writable": false, "signer": false },
+                  {
+                    "index": 2, "kind": "supplied", "role": "routes", "writable": false, "signer": false,
+                    "derivation": {
+                      "program": "%s",
+                      "seeds": [
+                        { "kind": "const", "value": [114, 111, 117, 116, 101, 115] },
+                        { "kind": "account", "index": 0 },
+                        { "kind": "account", "index": 1 },
+                        { "kind": "account", "index": 3 },
+                        { "kind": "account", "index": 6 },
+                        { "kind": "arg", "path": "params.protocol" }
+                      ]
+                    }
+                  },
+                  { "index": 3, "kind": "source", "source": 0, "writable": false, "signer": false },
+                  { "index": 4, "kind": "source", "source": 1, "writable": false, "signer": false },
+                  { "index": 5, "kind": "supplied", "role": "ledger", "writable": true, "signer": false },
+                  { "index": 6, "kind": "source", "source": 2, "writable": false, "signer": false, "sentinel": true }
+                ],
+                "remaining_accounts": { "kind": "any" },
+                "supplied_accounts": [
+                  { "role": "oracle", "of": [1], "optional": true }
+                ]
               }
             ]
           }
-          """.formatted(PROGRAM_A.toBase58(), PROXY.toBase58(), PROGRAM_A.toBase58()), "a"),
+          """.formatted(PROGRAM_A.toBase58(), PROXY.toBase58(), PROGRAM_A.toBase58(), PROGRAM_A.toBase58(), PROXY.toBase58()), "a"),
       MappingDocumentParser.parse("""
           {
             "schema_version": 1, "environment": "fuzz",
@@ -218,37 +268,77 @@ public final class IxMapperFuzz {
     });
   }
 
-  /// The supplier's answer, after it checks the request against the `priced` entry, the one
-  /// that lists supplied accounts.
-  static List<PublicKey> answer(final Supply supply, final SuppliedAccountsRequest request) {
-    if (!request.proxyProgram().equals(PROXY) || !request.program().equals(PROGRAM_A)
-        || !request.source().equals("priced") || !request.handler().equals("proxy_priced")
-        || request.roles().size() != PRICED_SUPPLIED.size()) {
-      throw new AssertionError("the supplier was asked " + request);
+  /// Whether an entry asks the supplier: `priced` lists supplied accounts, and `routed` also
+  /// supplies two at an account index.
+  static boolean asks(final String source) {
+    return "priced".equals(source) || "routed".equals(source);
+  }
+
+  /// The keys the supplier answers for an entry that asks, in request order.
+  static List<PublicKey> answers(final String source) {
+    if (source.equals("routed")) {
+      return ROUTED_ANSWERS;
     }
-    final var accounts = request.instruction().accounts();
-    for (int i = 0; i < PRICED_SUPPLIED.size(); i++) {
-      final var listed = PRICED_SUPPLIED.get(i);
+    final var answers = new ArrayList<PublicKey>(PRICED_SUPPLIED.size());
+    for (final var listed : PRICED_SUPPLIED) {
+      answers.add(listed.answer());
+    }
+    return answers;
+  }
+
+  /// The roles the request for an entry that asks must name, over the instruction's accounts:
+  /// `priced`'s as it lists them, each with the addresses at its `of` positions; `routed`'s
+  /// `routes` at account index 2 with its derivation resolved to what the mapper placed (the
+  /// state at 0, program A's address at 1, the account of position 0 at 3, and at the
+  /// sentinel's account index 6 the account of position 2, or the proxy program where that
+  /// holds program A), then `ledger` at 5, then the optional `oracle` of position 1.
+  static List<SuppliedAccountsRequest.Role> roles(final String source, final List<AccountMeta> accounts) {
+    if (source.equals("routed")) {
+      final var maybe = accounts.get(2).publicKey();
+      return List.of(
+          new SuppliedAccountsRequest.Role("routes", List.of(), false, new SuppliedAccountsRequest.Derivation(PROXY, List.of(
+              new SuppliedAccountsRequest.Const(ROUTES_SEED),
+              new SuppliedAccountsRequest.Account(STATE),
+              new SuppliedAccountsRequest.Account(PROGRAM_A),
+              new SuppliedAccountsRequest.Account(accounts.getFirst().publicKey()),
+              new SuppliedAccountsRequest.Account(maybe.equals(PROGRAM_A) ? PROXY : maybe),
+              new SuppliedAccountsRequest.Arg("params.protocol")
+          ))),
+          new SuppliedAccountsRequest.Role("ledger", List.of(), false),
+          new SuppliedAccountsRequest.Role("oracle", List.of(accounts.get(1).publicKey()), true)
+      );
+    }
+    final var roles = new ArrayList<SuppliedAccountsRequest.Role>(PRICED_SUPPLIED.size());
+    for (final var listed : PRICED_SUPPLIED) {
       final var of = new ArrayList<PublicKey>(listed.of().length);
       for (final int position : listed.of()) {
         of.add(accounts.get(position).publicKey());
       }
-      final var role = request.roles().get(i);
-      if (!role.role().equals(listed.role()) || role.optional() != listed.optional() || !role.of().equals(of)) {
-        throw new AssertionError("role " + i + " of the request is " + role);
-      }
+      roles.add(new SuppliedAccountsRequest.Role(listed.role(), of, listed.optional()));
     }
-    final var answer = new ArrayList<PublicKey>(PRICED_SUPPLIED.size() + 1);
-    for (final var listed : PRICED_SUPPLIED) {
-      answer.add(listed.answer());
+    return roles;
+  }
+
+  /// The supplier's answer, after it checks the request against the entry that asks.
+  static List<PublicKey> answer(final Supply supply, final SuppliedAccountsRequest request) {
+    final var source = request.source();
+    if (!asks(source) || !request.proxyProgram().equals(PROXY) || !request.program().equals(PROGRAM_A)
+        || !request.handler().equals("proxy_" + source)) {
+      throw new AssertionError("the supplier was asked " + request);
     }
+    final var expected = roles(source, request.instruction().accounts());
+    if (!request.roles().equals(expected)) {
+      throw new AssertionError("the request names the roles " + request.roles() + ", not " + expected);
+    }
+    final int required = source.equals("routed") ? ROUTED_REQUIRED : PRICED_REQUIRED;
+    final var answer = new ArrayList<>(answers(source));
     return switch (supply) {
       case ALL -> answer;
-      case REQUIRED -> answer.subList(0, PRICED_REQUIRED);
+      case REQUIRED -> answer.subList(0, required);
       case NO_SUPPLIER -> throw new AssertionError("a context without a supplier was asked");
       case NULL_ANSWER -> null;
       case THROWS -> throw new IllegalStateException("the supplier cannot answer");
-      case TOO_FEW -> answer.subList(0, PRICED_REQUIRED - 1);
+      case TOO_FEW -> answer.subList(0, required - 1);
       case TOO_MANY -> {
         answer.add(EXTRA);
         yield answer;
@@ -320,7 +410,7 @@ public final class IxMapperFuzz {
   static void checkRefusal(final Supply supply, final int asks, final MapResult.Unsupported unsupported) {
     final var reason = unsupported.reason();
     if ((reason == UnsupportedReason.CONTEXT || reason == UnsupportedReason.SUPPLIED_ACCOUNTS)
-        && (reason != supply.refusal || !"priced".equals(unsupported.source())
+        && (reason != supply.refusal || !asks(unsupported.source())
         || asks != (supply == Supply.NO_SUPPLIER ? 0 : 1))) {
       throw new AssertionError(unsupported.source() + " refused for " + reason + " under supplier " + supply
           + ", asked " + asks + " times: " + unsupported.message());
@@ -343,12 +433,16 @@ public final class IxMapperFuzz {
       name = "priced";
       sourceDiscriminator = PRICED_DISCRIMINATOR;
       handlerDiscriminator = PROXY_PRICED_DISCRIMINATOR;
+    } else if (instruction.data()[instruction.offset()] == ROUTED_DISCRIMINATOR[0]) {
+      name = "routed";
+      sourceDiscriminator = ROUTED_DISCRIMINATOR;
+      handlerDiscriminator = PROXY_ROUTED_DISCRIMINATOR;
     } else {
       name = "full";
       sourceDiscriminator = FULL_DISCRIMINATOR;
       handlerDiscriminator = PROXY_FULL_DISCRIMINATOR;
     }
-    final boolean supplied = name.equals("priced");
+    final boolean supplied = asks(name);
     if (supplied && supply.refusal != null) {
       throw new AssertionError(name + " mapped under supplier " + supply);
     }
@@ -370,6 +464,10 @@ public final class IxMapperFuzz {
         .findFirst().orElseThrow();
     final int positions = entry.sourceAccounts().size();
     final var expected = new ArrayList<AccountMeta>();
+    // the supplier's answer for an entry that asks, of which the first take the accounts at
+    // an account index, in account-index order
+    final var answers = supplied ? answers(name) : List.<PublicKey>of();
+    int answeredAtAnIndex = 0;
     int fixedSeats = 0;
     for (final var seat : entry.destinationAccounts()) {
       switch (seat) {
@@ -411,12 +509,15 @@ public final class IxMapperFuzz {
           }
           expected.add(AccountMeta.createMeta(key, seat.writable(), signer));
         }
+        case DestinationAccount.Supplied placed ->
+            expected.add(AccountMeta.createMeta(answers.get(answeredAtAnIndex++), placed.writable(), false));
       }
     }
     if (supplied) {
-      final int answered = supply == Supply.ALL ? PRICED_SUPPLIED.size() : PRICED_REQUIRED;
-      for (int i = 0; i < answered; i++) {
-        expected.add(AccountMeta.createRead(PRICED_SUPPLIED.get(i).answer()));
+      final int required = name.equals("routed") ? ROUTED_REQUIRED : PRICED_REQUIRED;
+      final int answered = supply == Supply.ALL ? answers.size() : required;
+      for (int i = answeredAtAnIndex; i < answered; i++) {
+        expected.add(AccountMeta.createRead(answers.get(i)));
       }
     }
     for (int i = positions; i < count; i++) {

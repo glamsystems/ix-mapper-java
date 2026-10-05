@@ -852,4 +852,402 @@ final class MappingDocumentParserTests {
     final var e = assertThrows(MappingDocumentException.class, () -> parse(document));
     assertEquals("mapping document " + PROGRAM + " instructions[0]", e.at());
   }
+
+  /// "bridge-routes", the constant seed of the contract's example.
+  private static final byte[] BRIDGE_ROUTES = {98, 114, 105, 100, 103, 101, 45, 114, 111, 117, 116, 101, 115};
+
+  private static List<Object> bytes(final byte[] value) {
+    final var list = new ArrayList<>(value.length);
+    for (final byte b : value) {
+      list.add((long) (b & 0xff));
+    }
+    return list;
+  }
+
+  /// The valid document without its omittable position and the account that forwards it, and
+  /// with a supplied account at account index 4 instead: `bridge_routes`, read-only, derived
+  /// under the proxy program from a constant, the vault at account index 0 and an argument.
+  static Map<String, Object> withSuppliedAtAnAccountIndex() {
+    final var document = valid();
+    Json.array(entry(document, 0).get("destination_accounts")).removeLast();
+    Json.array(entry(document, 0).get("source_accounts")).removeLast();
+    Json.array(entry(document, 0).get("destination_accounts")).add(map(
+        "index", 4L, "kind", "supplied", "role", "bridge_routes", "writable", false, "signer", false,
+        "derivation", map("program", PROXY, "seeds", list(
+            map("kind", "const", "value", bytes(BRIDGE_ROUTES)),
+            map("kind", "account", "index", 0L),
+            map("kind", "arg", "path", "params.protocol")
+        ))
+    ));
+    return document;
+  }
+
+  private static Map<String, Object> destination(final Map<String, Object> d, final int i) {
+    return Json.object(Json.array(entry(d, 0).get("destination_accounts")).get(i));
+  }
+
+  private static Map<String, Object> suppliedAccount(final Map<String, Object> d) {
+    return destination(d, 4);
+  }
+
+  private static Map<String, Object> derivation(final Map<String, Object> d) {
+    return Json.object(suppliedAccount(d).get("derivation"));
+  }
+
+  private static Map<String, Object> seed(final Map<String, Object> d, final int i) {
+    return Json.object(Json.array(derivation(d).get("seeds")).get(i));
+  }
+
+  /// The omittable position back, forwarded at account index 5.
+  private static void withOmittable(final Map<String, Object> d) {
+    Json.array(entry(d, 0).get("source_accounts")).add(map("name", "trailing", "writable", false, "signer", false, "optional", "omitted"));
+    Json.array(entry(d, 0).get("destination_accounts")).add(map("index", 5L, "kind", "source", "source", 3L, "writable", false, "signer", false));
+  }
+
+  /// A second supplied account, at account index 5.
+  private static Map<String, Object> withLedger(final Map<String, Object> d) {
+    final var ledger = map("index", 5L, "kind", "supplied", "role", "ledger", "writable", true, "signer", false);
+    Json.array(entry(d, 0).get("destination_accounts")).add(ledger);
+    return ledger;
+  }
+
+  private static List<DestinationAccount> destinations(final MappingDocument document) {
+    return ((InstructionEntry.Mapped) document.instructions().getFirst()).destinationAccounts();
+  }
+
+  /// A supplied account at an account index is read with its role, the handler's flags and its
+  /// derivation, each seed by its kind; without a derivation it carries none, and a derivation
+  /// may hold no seed.
+  @Test
+  void admitsASuppliedAccountAtAnAccountIndexAndReadsItsDerivation() {
+    assertEquals(new DestinationAccount.Supplied(4, "bridge_routes", false, false, new Derivation(
+        PublicKey.fromBase58Encoded(PROXY),
+        List.of(new Derivation.Const(BRIDGE_ROUTES), new Derivation.Account(0), new Derivation.Arg("params.protocol"))
+    )), destinations(parse(withSuppliedAtAnAccountIndex())).get(4));
+    final var plain = withSuppliedAtAnAccountIndex();
+    suppliedAccount(plain).remove("derivation");
+    suppliedAccount(plain).put("writable", true);
+    assertEquals(new DestinationAccount.Supplied(4, "bridge_routes", true, false, null), destinations(parse(plain)).get(4));
+    final var empty = withSuppliedAtAnAccountIndex();
+    derivation(empty).put("seeds", list());
+    assertEquals(new Derivation(PublicKey.fromBase58Encoded(PROXY), List.of()),
+        ((DestinationAccount.Supplied) destinations(parse(empty)).get(4)).derivation());
+  }
+
+  /// A derivation may name every account index the mapper fills itself (a GLAM account, a fixed
+  /// address, a forwarded account and one a sentinel may rewrite), and a constant seed may be
+  /// 32 bytes, the longest a seed is; a supplied account may come before the account a client
+  /// may leave out.
+  @Test
+  void admitsEveryAccountIndexTheMapperFillsAndAThirtyTwoByteSeed() {
+    final var document = withSuppliedAtAnAccountIndex();
+    withOmittable(document);
+    derivation(document).put("seeds", list(
+        map("kind", "account", "index", 0L),
+        map("kind", "account", "index", 1L),
+        map("kind", "account", "index", 2L),
+        map("kind", "account", "index", 3L),
+        map("kind", "const", "value", bytes(new byte[32]))
+    ));
+    final var derived = ((DestinationAccount.Supplied) destinations(parse(document)).get(4)).derivation();
+    assertEquals(List.of(
+        new Derivation.Account(0), new Derivation.Account(1), new Derivation.Account(2), new Derivation.Account(3),
+        new Derivation.Const(new byte[32])
+    ), derived.seeds());
+  }
+
+  /// The generator's document for CCTP's `deposit_for_burn`, the contract's example: GLAM's
+  /// seven accounts, `bridge_routes` at account index 7, read-only, derived under the proxy
+  /// program from "bridge-routes", the vault's state and the protocol's two bytes, then CCTP's
+  /// accounts one account index later. The bytes are a committed seed of the mappingConfig
+  /// corpus.
+  @Test
+  void admitsTheGeneratedDocumentWithASuppliedAccountAtItsAccountIndex() {
+    final var document = MappingDocuments.read(java.nio.file.Path.of("src/test/resources/fuzz/mappingConfig/cctp-production.json"));
+    final var deposit = (InstructionEntry.Mapped) document.instructions().stream()
+        .filter(candidate -> candidate.name().equals("deposit_for_burn"))
+        .findFirst().orElseThrow();
+    assertEquals(22, deposit.destinationAccounts().size());
+    assertEquals(new DestinationAccount.Supplied(7, "bridge_routes", false, false, new Derivation(
+        document.proxyProgramId(),
+        List.of(new Derivation.Const(BRIDGE_ROUTES), new Derivation.Account(0), new Derivation.Const(new byte[]{1, 0}))
+    )), deposit.destinationAccounts().get(7));
+    assertEquals(new DestinationAccount.Source(8, 2, false, false, false), deposit.destinationAccounts().get(8));
+    assertEquals(List.of(), deposit.suppliedAccounts());
+  }
+
+  private static final List<Refusal> SUPPLIED_AT_AN_ACCOUNT_INDEX_REFUSALS = List.of(
+      // the account's own fields
+      new Refusal("a supplied account carrying a name", d -> suppliedAccount(d).put("name", "glam_vault"), "a supplied account carries no \"name\""),
+      new Refusal("a supplied account carrying an address", d -> suppliedAccount(d).put("address", PROXY), "a supplied account carries no \"address\""),
+      new Refusal("a supplied account carrying a source", d -> suppliedAccount(d).put("source", 0L), "a supplied account carries no \"source\""),
+      new Refusal("a supplied account carrying a sentinel", d -> suppliedAccount(d).put("sentinel", true), "a supplied account carries no \"sentinel\""),
+      new Refusal("a supplied account carrying a null name", d -> suppliedAccount(d).put("name", null), "a supplied account carries no \"name\""),
+      new Refusal("a supplied account without a role", d -> suppliedAccount(d).remove("role"), "role must be a non-blank string"),
+      new Refusal("a supplied account with a blank role", d -> suppliedAccount(d).put("role", "\u00a0"), "role must be a non-blank string"),
+      new Refusal("a supplied account with a role that is not a string", d -> suppliedAccount(d).put("role", 5L), "role must be a non-blank string"),
+      new Refusal("a supplied account carrying of", d -> suppliedAccount(d).put("of", list(0L)), "unknown field \"of\""),
+      new Refusal("a supplied account carrying optional", d -> suppliedAccount(d).put("optional", true), "unknown field \"optional\""),
+      new Refusal("a supplied account without writable", d -> suppliedAccount(d).remove("writable"), "writable must be a boolean"),
+      new Refusal("a supplied account without signer", d -> suppliedAccount(d).remove("signer"), "signer must be a boolean"),
+      // the derivation
+      new Refusal("a derivation that is not an object", d -> suppliedAccount(d).put("derivation", 5L), "destination_accounts[4]: derivation must be an object"),
+      new Refusal("a derivation that is an array", d -> suppliedAccount(d).put("derivation", list()), "derivation must be an object"),
+      new Refusal("a null derivation", d -> suppliedAccount(d).put("derivation", null), "derivation must be an object"),
+      new Refusal("a derivation with an unknown field", d -> derivation(d).put("bump", 255L), "derivation: unknown field \"bump\""),
+      new Refusal("a derivation with two unknown fields", d -> {
+        derivation(d).put("aaa", 1L);
+        derivation(d).put("bbb", 2L);
+      }, "unknown field \"aaa\""),
+      new Refusal("a derivation without a program", d -> derivation(d).remove("program"), "program must be a non-blank string"),
+      new Refusal("a derivation with a blank program", d -> derivation(d).put("program", ""), "program must be a non-blank string"),
+      new Refusal("a derivation whose program is not a string", d -> derivation(d).put("program", 5L), "program must be a non-blank string"),
+      new Refusal("a derivation whose program is not an address", d -> derivation(d).put("program", "short"), "program is not an address"),
+      new Refusal("a derivation without seeds", d -> derivation(d).remove("seeds"), "seeds must be an array"),
+      new Refusal("seeds that are not an array", d -> derivation(d).put("seeds", map()), "seeds must be an array"),
+      new Refusal("a bad program ahead of missing seeds: the program is named", d -> {
+        derivation(d).put("program", "short");
+        derivation(d).remove("seeds");
+      }, "program is not an address"),
+      // a seed
+      new Refusal("a seed that is not an object", d -> Json.array(derivation(d).get("seeds")).set(1, 5L), "derivation seeds[1]: must be an object"),
+      new Refusal("a seed with an unknown field", d -> seed(d, 0).put("account", "glam_state"), "unknown field \"account\""),
+      new Refusal("a seed with two unknown fields", d -> {
+        seed(d, 0).put("aaa", 1L);
+        seed(d, 0).put("bbb", 2L);
+      }, "unknown field \"aaa\""),
+      new Refusal("a seed without a kind", d -> seed(d, 1).remove("kind"), "the seed has no kind"),
+      new Refusal("an unknown seed kind", d -> seed(d, 1).put("kind", "pda"), "unknown seed kind pda"),
+      new Refusal("a seed kind that is not a string", d -> seed(d, 1).put("kind", 5L), "unknown seed kind 5"),
+      new Refusal("a null seed kind", d -> seed(d, 1).put("kind", null), "unknown seed kind null"),
+      new Refusal("a seed kind that is an array", d -> seed(d, 1).put("kind", list("account")), "unknown seed kind account"),
+      new Refusal("a constant seed without a value", d -> seed(d, 0).remove("value"), "value must be an array"),
+      new Refusal("a constant seed whose value is not an array", d -> seed(d, 0).put("value", "bridge-routes"), "value must be an array"),
+      new Refusal("a constant seed with a byte out of range", d -> seed(d, 0).put("value", list(1L, 256L)), "value[1] is not a byte"),
+      new Refusal("a constant seed with a negative byte", d -> seed(d, 0).put("value", list(-1L)), "value[0] is not a byte"),
+      new Refusal("a constant seed with a fractional byte", d -> seed(d, 0).put("value", list(1.5)), "value[0] is not a byte"),
+      new Refusal("a constant seed with a byte that is a string", d -> seed(d, 0).put("value", list("1")), "value[0] is not a byte"),
+      new Refusal("a constant seed carrying an index", d -> seed(d, 0).put("index", 0L), "a const seed carries no \"index\""),
+      new Refusal("a constant seed carrying a path", d -> seed(d, 0).put("path", "x"), "a const seed carries no \"path\""),
+      new Refusal("a constant seed carrying an index and a path: the index is named", d -> {
+        seed(d, 0).put("index", 0L);
+        seed(d, 0).put("path", "x");
+      }, "a const seed carries no \"index\""),
+      new Refusal("a constant seed carrying an index and no value: the index is named", d -> {
+        seed(d, 0).remove("value");
+        seed(d, 0).put("index", 0L);
+      }, "a const seed carries no \"index\""),
+      new Refusal("an account seed without an index", d -> seed(d, 1).remove("index"), "index must be a non-negative integer"),
+      new Refusal("an account seed with a negative index", d -> seed(d, 1).put("index", -1L), "index must be a non-negative integer"),
+      new Refusal("an account seed with a fractional index", d -> seed(d, 1).put("index", 0.5), "index must be a non-negative integer"),
+      new Refusal("an account seed with an index that is a string", d -> seed(d, 1).put("index", "0"), "index must be a non-negative integer"),
+      new Refusal("an account seed with an index past a Java int", d -> seed(d, 1).put("index", 2147483648L), "index must be a non-negative integer"),
+      new Refusal("an account seed carrying a value", d -> seed(d, 1).put("value", list(1L)), "an account seed carries no \"value\""),
+      new Refusal("an account seed carrying a path", d -> seed(d, 1).put("path", "x"), "an account seed carries no \"path\""),
+      new Refusal("an argument seed without a path", d -> seed(d, 2).remove("path"), "path must be a non-blank string"),
+      new Refusal("an argument seed with a blank path", d -> seed(d, 2).put("path", " "), "path must be a non-blank string"),
+      new Refusal("an argument seed whose path is not a string", d -> seed(d, 2).put("path", 5L), "path must be a non-blank string"),
+      new Refusal("an argument seed carrying a value", d -> seed(d, 2).put("value", list(1L)), "an arg seed carries no \"value\""),
+      new Refusal("an argument seed carrying an index", d -> seed(d, 2).put("index", 0L), "an arg seed carries no \"index\""),
+      new Refusal("a bad first seed ahead of a bad second: the first is named", d -> {
+        seed(d, 0).put("kind", "pda");
+        seed(d, 1).remove("index");
+      }, "derivation seeds[0]: unknown seed kind pda"),
+      // the rules over the entry
+      new Refusal("a supplied account that signs", d -> suppliedAccount(d).put("signer", true),
+          "the supplied account at account index 4 signs; a supplied account never signs"),
+      new Refusal("a seed naming an account index past the list", d -> seed(d, 1).put("index", 5L),
+          "the supplied account at account index 4 derives from account index 5, which is out of range of 5"),
+      new Refusal("a seed naming its own account index", d -> seed(d, 1).put("index", 4L),
+          "the supplied account at account index 4 derives from account index 4, which the context supplies; a mapper resolves no supplied account for another"),
+      new Refusal("a seed naming another supplied account", d -> {
+        withLedger(d);
+        seed(d, 1).put("index", 5L);
+      }, "the supplied account at account index 4 derives from account index 5, which the context supplies; a mapper resolves no supplied account for another"),
+      new Refusal("a seed naming an account a client may leave out", d -> {
+        withOmittable(d);
+        seed(d, 1).put("index", 5L);
+      }, "the supplied account at account index 4 derives from account index 5, which a client may leave out"),
+      new Refusal("a constant seed longer than 32 bytes", d -> seed(d, 0).put("value", bytes(new byte[33])),
+          "the supplied account at account index 4 has a constant seed longer than 32 bytes"),
+      new Refusal("a supplied account after an account a client may leave out", d -> {
+        withOmittable(d);
+        suppliedAccount(d).put("index", 5L);
+        destination(d, 5).put("index", 4L);
+      }, "seat 5 follows a seat a client may leave out; an absent one would shift it"),
+      // the order the rules run in
+      new Refusal("a gap in the account indexes ahead of a bad seed: the gap is named", d -> {
+        suppliedAccount(d).put("index", 7L);
+        seed(d, 1).put("index", 9L);
+      }, "seats are not dense from 0: seat 7 of 5"),
+      new Refusal("a bad seed of the first supplied account and a second that signs: the signer is named", d -> {
+        withLedger(d).put("signer", true);
+        seed(d, 1).put("index", 9L);
+      }, "the supplied account at account index 5 signs; a supplied account never signs"),
+      new Refusal("a long constant ahead of a seed past the list: the constant is named", d -> {
+        seed(d, 0).put("value", bytes(new byte[33]));
+        seed(d, 1).put("index", 9L);
+      }, "the supplied account at account index 4 has a constant seed longer than 32 bytes"),
+      new Refusal("a seed past the list ahead of a long constant: the seed is named", d -> {
+        Json.array(derivation(d).get("seeds")).set(0, map("kind", "account", "index", 9L));
+        Json.array(derivation(d).get("seeds")).set(1, map("kind", "const", "value", bytes(new byte[33])));
+      }, "the supplied account at account index 4 derives from account index 9, which is out of range of 5"),
+      // role and derivation are fields a supplied account alone carries: every other kind refuses
+      // them the way it refuses the fields of the other kinds, after the fields no kind knows
+      new Refusal("a role on a dynamic account", d -> destination(d, 0).put("role", "r"), "a dynamic seat carries no \"role\""),
+      new Refusal("a derivation on a dynamic account", d -> destination(d, 0).put("derivation", map("program", PROXY, "seeds", list())), "a dynamic seat carries no \"derivation\""),
+      new Refusal("a role on a static account", d -> destination(d, 1).put("role", "r"), "a static seat carries no \"role\""),
+      new Refusal("a derivation on a static account", d -> destination(d, 1).put("derivation", map("program", PROXY, "seeds", list())), "a static seat carries no \"derivation\""),
+      new Refusal("a role on a forwarded account", d -> destination(d, 2).put("role", "r"), "a source seat carries no \"role\""),
+      new Refusal("a derivation on a forwarded account", d -> destination(d, 2).put("derivation", map("program", PROXY, "seeds", list())), "a source seat carries no \"derivation\""),
+      new Refusal("a malformed derivation on a forwarded account", d -> destination(d, 3).put("derivation", 5L), "a source seat carries no \"derivation\""),
+      new Refusal("a sentinel and a role on a dynamic account: the sentinel is named", d -> {
+        destination(d, 0).put("sentinel", true);
+        destination(d, 0).put("role", "r");
+      }, "a dynamic seat carries no \"sentinel\""),
+      new Refusal("a role and a negative source on a forwarded account: the role is named", d -> {
+        destination(d, 2).put("role", "r");
+        destination(d, 2).put("source", -1L);
+      }, "a source seat carries no \"role\""),
+      new Refusal("a role and a derivation on a dynamic account: the role is named", d -> {
+        destination(d, 0).put("role", "r");
+        destination(d, 0).put("derivation", map("program", PROXY, "seeds", list()));
+      }, "a dynamic seat carries no \"role\""),
+      new Refusal("a name and a role on a static account: the name is named", d -> {
+        destination(d, 1).put("name", "glam_vault");
+        destination(d, 1).put("role", "r");
+      }, "a static seat carries no \"name\""),
+      new Refusal("a role and a derivation on a static account: the role is named", d -> {
+        destination(d, 1).put("role", "r");
+        destination(d, 1).put("derivation", map("program", PROXY, "seeds", list()));
+      }, "a static seat carries no \"role\""),
+      new Refusal("a name and a role on a forwarded account: the name is named", d -> {
+        destination(d, 2).put("name", "thing");
+        destination(d, 2).put("role", "r");
+      }, "a source seat carries no \"name\""),
+      new Refusal("an address and a derivation on a forwarded account: the address is named", d -> {
+        destination(d, 2).put("address", PROXY);
+        destination(d, 2).put("derivation", map("program", PROXY, "seeds", list()));
+      }, "a source seat carries no \"address\""),
+      new Refusal("a name and a source on a supplied account: the name is named", d -> {
+        suppliedAccount(d).put("name", "glam_state");
+        suppliedAccount(d).put("source", 0L);
+      }, "a supplied account carries no \"name\""),
+      new Refusal("a source and a sentinel on a supplied account: the source is named", d -> {
+        suppliedAccount(d).put("source", 0L);
+        suppliedAccount(d).put("sentinel", true);
+      }, "a supplied account carries no \"source\""),
+      new Refusal("a sentinel and a role on a static account: the sentinel is named", d -> {
+        destination(d, 1).put("sentinel", true);
+        destination(d, 1).put("role", "r");
+      }, "a static seat carries no \"sentinel\""),
+      new Refusal("an address and a role on a forwarded account: the address is named", d -> {
+        destination(d, 2).put("address", PROXY);
+        destination(d, 2).put("role", "r");
+      }, "a source seat carries no \"address\""),
+      new Refusal("a role and a derivation on a forwarded account: the role is named", d -> {
+        destination(d, 2).put("role", "r");
+        destination(d, 2).put("derivation", map("program", PROXY, "seeds", list()));
+      }, "a source seat carries no \"role\""),
+      new Refusal("a derivation and no name on a dynamic account: the derivation is named", d -> {
+        destination(d, 0).remove("name");
+        destination(d, 0).put("derivation", map("program", PROXY, "seeds", list()));
+      }, "a dynamic seat carries no \"derivation\""),
+      new Refusal("a derivation and a malformed address on a static account: the derivation is named", d -> {
+        destination(d, 1).put("address", "not an address");
+        destination(d, 1).put("derivation", map("program", PROXY, "seeds", list()));
+      }, "a static seat carries no \"derivation\""),
+      new Refusal("a derivation and a negative source on a forwarded account: the derivation is named", d -> {
+        destination(d, 2).put("source", -1L);
+        destination(d, 2).put("derivation", map("program", PROXY, "seeds", list()));
+      }, "a source seat carries no \"derivation\""),
+      new Refusal("a name and an address on a supplied account: the name is named", d -> {
+        suppliedAccount(d).put("name", "glam_state");
+        suppliedAccount(d).put("address", PROXY);
+      }, "a supplied account carries no \"name\""),
+      new Refusal("an address and a source on a supplied account: the address is named", d -> {
+        suppliedAccount(d).put("address", PROXY);
+        suppliedAccount(d).put("source", 0L);
+      }, "a supplied account carries no \"address\""),
+      new Refusal("a sentinel and a blank role on a supplied account: the sentinel is named", d -> {
+        suppliedAccount(d).put("sentinel", true);
+        suppliedAccount(d).put("role", " ");
+      }, "a supplied account carries no \"sentinel\""),
+      new Refusal("a blank role and a malformed derivation on a supplied account: the role is named", d -> {
+        suppliedAccount(d).put("role", " ");
+        suppliedAccount(d).put("derivation", 5L);
+      }, "role must be a non-blank string"),
+      new Refusal("a role ahead of another unknown field on a dynamic account", d -> {
+        destination(d, 0).put("role", "r");
+        destination(d, 0).put("zzz", 1L);
+      }, "unknown field \"zzz\""),
+      new Refusal("another unknown field ahead of a role on a dynamic account", d -> {
+        destination(d, 0).put("zzz", 1L);
+        destination(d, 0).put("role", "r");
+      }, "unknown field \"zzz\""),
+      new Refusal("another unknown field after the role of a supplied account", d -> suppliedAccount(d).put("zzz", 1L), "unknown field \"zzz\""),
+      new Refusal("a role on an account whose kind is an array", d -> suppliedAccount(d).put("kind", list("supplied")), "unknown seat kind supplied"),
+      new Refusal("a role on an account without a kind", d -> suppliedAccount(d).remove("kind"), "the seat has no kind")
+  );
+
+  @TestFactory
+  Stream<DynamicTest> refusesASuppliedAccountAtAnAccountIndexOutsideItsRules() {
+    return SUPPLIED_AT_AN_ACCOUNT_INDEX_REFUSALS.stream().map(refusal -> DynamicTest.dynamicTest(refusal.what(), () -> {
+      final var document = withSuppliedAtAnAccountIndex();
+      refusal.patch().accept(document);
+      final var e = assertThrows(MappingDocumentException.class, () -> parse(document), refusal.what());
+      assertTrue(e.getMessage().endsWith(refusal.message()),
+          refusal.what() + ": expected a message ending \"" + refusal.message() + "\", got \"" + e.getMessage() + "\"");
+    }));
+  }
+
+  /// A field named twice inside a supplied account, its derivation or a seed is refused, the
+  /// first one met named.
+  private static final List<TextRefusal> SUPPLIED_AT_AN_ACCOUNT_INDEX_TEXT_REFUSALS = List.of(
+      new TextRefusal("a duplicate role", t -> t.replace("\"role\":\"bridge_routes\"", "\"role\":\"bridge_routes\",\"role\":\"x\""), "destination_accounts[4]: duplicate field \"role\""),
+      new TextRefusal("a duplicate derivation", t -> t.replace(",\"derivation\":{", ",\"derivation\":5,\"derivation\":{"), "duplicate field \"derivation\""),
+      new TextRefusal("a duplicate derivation field", t -> t.replace("\"program\":\"" + PROXY + "\"", "\"program\":\"" + PROXY + "\",\"program\":\"x\""), "derivation: duplicate field \"program\""),
+      new TextRefusal("two duplicate derivation fields", t -> t.replace("\"program\":\"" + PROXY + "\",\"seeds\":[", "\"program\":\"" + PROXY + "\",\"program\":\"x\",\"seeds\":[],\"seeds\":["), "duplicate field \"program\""),
+      new TextRefusal("a duplicate seed field", t -> t.replace("{\"kind\":\"account\",\"index\":0}", "{\"kind\":\"account\",\"index\":0,\"index\":1}"), "derivation seeds[1]: duplicate field \"index\""),
+      new TextRefusal("two duplicate seed fields", t -> t.replace("{\"kind\":\"account\",\"index\":0}", "{\"kind\":\"account\",\"kind\":\"arg\",\"index\":0,\"index\":1}"), "duplicate field \"kind\"")
+  );
+
+  @TestFactory
+  Stream<DynamicTest> refusesAFieldNamedTwiceInASuppliedAccountAtAnAccountIndex() {
+    final var base = Json.write(withSuppliedAtAnAccountIndex());
+    return SUPPLIED_AT_AN_ACCOUNT_INDEX_TEXT_REFUSALS.stream().map(refusal -> DynamicTest.dynamicTest(refusal.what(), () -> {
+      final var text = refusal.patch().apply(base);
+      assertNotEquals(base, text, refusal.what() + ": the patch did not apply");
+      final var e = assertThrows(MappingDocumentException.class, () -> parseText(text), refusal.what());
+      assertTrue(e.getMessage().endsWith(refusal.message()),
+          refusal.what() + ": expected a message ending \"" + refusal.message() + "\", got \"" + e.getMessage() + "\"");
+    }));
+  }
+
+  private record Where(Consumer<Map<String, Object>> patch, String at, String detail) {
+  }
+
+  /// A refusal of a supplied account at an account index names where it is: the account for
+  /// its own fields and for a derivation that is not an object, the derivation for its
+  /// fields, the seed for its own, and the entry for a rule over the entry.
+  @Test
+  void aRefusalOfASuppliedAccountAtAnAccountIndexNamesWhereItIs() {
+    final var entryAt = "mapping document " + PROGRAM + " instructions[0]";
+    final var accountAt = entryAt + " destination_accounts[4]";
+    final var rows = List.of(
+        new Where(d -> suppliedAccount(d).remove("role"), accountAt, "role must be a non-blank string"),
+        new Where(d -> suppliedAccount(d).put("derivation", 5L), accountAt, "derivation must be an object"),
+        new Where(d -> derivation(d).put("program", "short"), accountAt + " derivation", "program is not an address"),
+        new Where(d -> derivation(d).remove("seeds"), accountAt + " derivation", "seeds must be an array"),
+        new Where(d -> seed(d, 2).put("path", ""), accountAt + " derivation seeds[2]", "path must be a non-blank string"),
+        new Where(d -> suppliedAccount(d).put("signer", true), entryAt, "the supplied account at account index 4 signs; a supplied account never signs")
+    );
+    for (final var row : rows) {
+      final var document = withSuppliedAtAnAccountIndex();
+      row.patch().accept(document);
+      final var e = assertThrows(MappingDocumentException.class, () -> parse(document), row.detail());
+      assertEquals(row.at(), e.at(), row.detail());
+      assertEquals(row.detail(), e.detail());
+    }
+  }
 }

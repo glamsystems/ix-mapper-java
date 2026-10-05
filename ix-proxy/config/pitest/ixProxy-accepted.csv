@@ -1,6 +1,6 @@
 !sava-hardening-baseline-schema,1
-systems.glam.ix.proxy.MappingDocumentParser$DocumentBuilder,test,BooleanFalseReturnValsMutator,SURVIVED # top-level-predicate-return # line 373
-systems.glam.ix.proxy.MappingDocumentParser,validateShape,ConditionalsBoundaryMutator,SURVIVED # unreachable-equality # line 1490
-systems.glam.ix.proxy.MappingDocumentParser,plainNumber,ConditionalsBoundaryMutator,SURVIVED # unreachable-equality # line 178
+systems.glam.ix.proxy.MappingDocumentParser$DocumentBuilder,test,BooleanFalseReturnValsMutator,SURVIVED # top-level-predicate-return # line 379
+systems.glam.ix.proxy.MappingDocumentParser,validateShape,ConditionalsBoundaryMutator,SURVIVED # unreachable-equality # line 1778
+systems.glam.ix.proxy.MappingDocumentParser,plainNumber,ConditionalsBoundaryMutator,SURVIVED # unreachable-equality # line 180
 systems.glam.ix.proxy.MappingDocuments,lambda$readDirectory$1,NakedReceiverMutator,SURVIVED # equivalent path-suffix # line 39
 systems.glam.ix.proxy.MappingDocuments,lambda$readDirectory$2,NakedReceiverMutator,SURVIVED # equivalent path-suffix # line 40
