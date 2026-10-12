@@ -1,7 +1,9 @@
 package systems.glam.ix.proxy;
 
-/// Where a document came from: the generator commit, the IDL store revisions and the
-/// configuration revision. Every field but the revision may be absent (null).
+/// Where a document came from: the generator commit, the IDL stores by their IDL digest
+/// (`glam managed <store> (idl <digest>)`; documents from older generators also name the
+/// store revision) and the configuration revision. Every field but the configuration
+/// revision may be absent (null); the names are carried, never parsed.
 public record Provenance(String generator,
                          String sourceIdl,
                          String proxyIdl,
