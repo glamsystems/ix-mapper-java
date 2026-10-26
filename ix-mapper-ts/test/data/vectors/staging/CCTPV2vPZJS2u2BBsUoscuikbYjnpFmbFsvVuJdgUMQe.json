@@ -218,7 +218,44 @@
       "glamState": "State11111111111111111111111111111111111111",
       "glamVault": "Vau1t11111111111111111111111111111111111111",
       "glamSigner": "Signer1111111111111111111111111111111111111",
-      "integrationAuthority": true
+      "integrationAuthority": true,
+      "suppliedAccounts": {
+        "deposit_for_burn": {
+          "request": {
+            "proxyProgram": "gstgxS9yTioViNKdsM4DC33k1TU9un2VCYDQK8fAeSA",
+            "program": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+            "handler": "cctp_deposit_for_burn",
+            "roles": [
+              {
+                "role": "bridge_routes",
+                "of": [],
+                "optional": false,
+                "derivation": {
+                  "program": "gstgxS9yTioViNKdsM4DC33k1TU9un2VCYDQK8fAeSA",
+                  "seeds": [
+                    {
+                      "kind": "const",
+                      "value": [
+                        98, 114, 105, 100, 103, 101, 45, 114, 111, 117, 116,
+                        101, 115
+                      ]
+                    },
+                    {
+                      "kind": "account",
+                      "address": "State11111111111111111111111111111111111111"
+                    },
+                    {
+                      "kind": "const",
+                      "value": [1, 0]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "answer": ["AXBW4GNuJ12vsMCfYv1myAE82Vwx64pAEX85wUNhHMc1"]
+        }
+      }
     },
     "expected": {
       "kind": "mapped",
@@ -257,6 +294,11 @@
           },
           {
             "address": "11111111111111111111111111111111",
+            "writable": false,
+            "signer": false
+          },
+          {
+            "address": "AXBW4GNuJ12vsMCfYv1myAE82Vwx64pAEX85wUNhHMc1",
             "writable": false,
             "signer": false
           },
@@ -447,7 +489,44 @@
       "glamState": "State11111111111111111111111111111111111111",
       "glamVault": "Vau1t11111111111111111111111111111111111111",
       "glamSigner": "Signer1111111111111111111111111111111111111",
-      "integrationAuthority": true
+      "integrationAuthority": true,
+      "suppliedAccounts": {
+        "deposit_for_burn": {
+          "request": {
+            "proxyProgram": "gstgxS9yTioViNKdsM4DC33k1TU9un2VCYDQK8fAeSA",
+            "program": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+            "handler": "cctp_deposit_for_burn",
+            "roles": [
+              {
+                "role": "bridge_routes",
+                "of": [],
+                "optional": false,
+                "derivation": {
+                  "program": "gstgxS9yTioViNKdsM4DC33k1TU9un2VCYDQK8fAeSA",
+                  "seeds": [
+                    {
+                      "kind": "const",
+                      "value": [
+                        98, 114, 105, 100, 103, 101, 45, 114, 111, 117, 116,
+                        101, 115
+                      ]
+                    },
+                    {
+                      "kind": "account",
+                      "address": "State11111111111111111111111111111111111111"
+                    },
+                    {
+                      "kind": "const",
+                      "value": [1, 0]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "answer": ["AXBW4GNuJ12vsMCfYv1myAE82Vwx64pAEX85wUNhHMc1"]
+        }
+      }
     },
     "expected": {
       "kind": "mapped",
@@ -486,6 +565,11 @@
           },
           {
             "address": "11111111111111111111111111111111",
+            "writable": false,
+            "signer": false
+          },
+          {
+            "address": "AXBW4GNuJ12vsMCfYv1myAE82Vwx64pAEX85wUNhHMc1",
             "writable": false,
             "signer": false
           },
@@ -570,6 +654,120 @@
       "program": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
       "source": "deposit_for_burn",
       "handler": "cctp_deposit_for_burn"
+    }
+  },
+  {
+    "name": "staging-deposit_for_burn-unserved",
+    "note": "no supplier for an entry that lists supplied accounts",
+    "environment": "staging",
+    "instruction": {
+      "programAddress": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+      "accounts": [
+        {
+          "address": "Vau1t11111111111111111111111111111111111111",
+          "writable": false,
+          "signer": true
+        },
+        {
+          "address": "Signer1111111111111111111111111111111111111",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "address": "DYMeAKNdmH4MUc3EJHchcpCTX5WPoUTrresGi1h8ZBNt",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "6i9SfXcTt2E6JqRsheP8qpPvjiZg8eUqNNGKmCG1oEue",
+          "writable": true,
+          "signer": false
+        },
+        {
+          "address": "2izC4anBSJzvKCsyGvrnsaKZQ7nJ4MCHrCHUzNwoKBuY",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "Bnk6rWtuyTfYpNixrGYeXW41arorXUQm8sZmrRgpRNyL",
+          "writable": true,
+          "signer": false
+        },
+        {
+          "address": "CgnXcQsuL9LDYiwWVTLww1ZR745EkhooLVgtwDqcu4bR",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "BsMdue6eSxfwkuZzwHrB6NGLsekfHP2HnUsZdGL9H6Ex",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "Vnid2WqoWbtvM6DpYmmJdQwxaE5R44jBcvvfQdqAQiA",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "G3SnYrdy24MikhBJNqZcfZibhxFTfh2NTzeFzuLcndau",
+          "writable": true,
+          "signer": false
+        },
+        {
+          "address": "HKdHKK3kfvk2NvjH7XXeuQEZgWXY9yScZRFe5mzf3hfH",
+          "writable": true,
+          "signer": false
+        },
+        {
+          "address": "B5nfVqW7YnjYcrRmZTKPBpcB6vUfJQfaNgPhPzsAkAmA",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "address": "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "DjJAoaYpdeoR9PY3F9gPM2qDLd854R8jeAuqZNYob4FT",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "address": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+          "writable": false,
+          "signer": false
+        }
+      ],
+      "data": [215, 60, 61, 46, 114, 55, 128, 176, 1, 2, 3]
+    },
+    "context": {
+      "glamState": "State11111111111111111111111111111111111111",
+      "glamVault": "Vau1t11111111111111111111111111111111111111",
+      "glamSigner": "Signer1111111111111111111111111111111111111",
+      "integrationAuthority": true
+    },
+    "expected": {
+      "kind": "unsupported",
+      "program": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+      "source": "deposit_for_burn",
+      "reason": "context",
+      "message": "the context supplies no accounts for deposit_for_burn"
     }
   },
   {

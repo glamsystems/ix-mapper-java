@@ -1,0 +1,114 @@
+{
+  "name": "staging-cctp-deposit-for-burn-without-a-supplier-is-refused",
+  "note": "without a supplier the context cannot name the vault's BridgeRoutes account the handler declares, so the instruction is refused for its context",
+  "environment": "staging",
+  "instruction": {
+    "programAddress": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+    "accounts": [
+      {
+        "address": "Vau1t11111111111111111111111111111111111111",
+        "writable": false,
+        "signer": true
+      },
+      {
+        "address": "Signer1111111111111111111111111111111111111",
+        "writable": true,
+        "signer": true
+      },
+      {
+        "address": "C211111111111111111111111111111111111111111",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "C311111111111111111111111111111111111111111",
+        "writable": true,
+        "signer": false
+      },
+      {
+        "address": "C411111111111111111111111111111111111111111",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "C511111111111111111111111111111111111111111",
+        "writable": true,
+        "signer": false
+      },
+      {
+        "address": "C611111111111111111111111111111111111111111",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "C711111111111111111111111111111111111111111",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "C811111111111111111111111111111111111111111",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "C911111111111111111111111111111111111111111",
+        "writable": true,
+        "signer": false
+      },
+      {
+        "address": "CctpAcct11111111111111111111111111111111111",
+        "writable": true,
+        "signer": false
+      },
+      {
+        "address": "C111111111111111111111111111111111111111111",
+        "writable": true,
+        "signer": true
+      },
+      {
+        "address": "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "11111111111111111111111111111111",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "C161111111111111111111111111111111111111111",
+        "writable": false,
+        "signer": false
+      },
+      {
+        "address": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+        "writable": false,
+        "signer": false
+      }
+    ],
+    "data": [215, 60, 61, 46, 114, 55, 128, 176, 7, 7, 7]
+  },
+  "context": {
+    "glamState": "State11111111111111111111111111111111111111",
+    "glamVault": "Vau1t11111111111111111111111111111111111111",
+    "glamSigner": "Signer1111111111111111111111111111111111111",
+    "integrationAuthority": true
+  },
+  "expected": {
+    "kind": "unsupported",
+    "program": "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe",
+    "source": "deposit_for_burn",
+    "reason": "context",
+    "message": "the context supplies no accounts for deposit_for_burn"
+  }
+}
