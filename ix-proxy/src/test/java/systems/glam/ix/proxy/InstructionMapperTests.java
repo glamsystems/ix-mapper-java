@@ -963,9 +963,15 @@ final class InstructionMapperTests {
 
   /// `route` with the mint, the optional at position 1, and an account beyond the list.
   private static Instruction routeInstruction(final PublicKey maybe) {
+    return routeInstruction(AccountMeta.createRead(MINT_A), maybe);
+  }
+
+  /// `route` with `first` at position 0, the optional at position 1, and an account beyond the
+  /// list.
+  private static Instruction routeInstruction(final AccountMeta first, final PublicKey maybe) {
     return Instruction.createInstruction(
         PROGRAM,
-        List.of(AccountMeta.createRead(MINT_A), AccountMeta.createRead(maybe), AccountMeta.createWrite(EXTRA)),
+        List.of(first, AccountMeta.createRead(maybe), AccountMeta.createWrite(EXTRA)),
         new byte[]{6, 5}
     );
   }
@@ -1051,6 +1057,36 @@ final class InstructionMapperTests {
     final var mapped = assertInstanceOf(MapResult.Mapped.class, placedMapper().map(routeInstruction(PROGRAM), context));
     assertEquals(AccountMeta.createRead(PROXY), mapped.instruction().accounts().get(5));
     assertEquals(routesRole(PROXY), requests.getFirst().roles().getFirst());
+  }
+
+  /// Only a sentinel seat rewrites the program id to the proxy program: at a seat without one,
+  /// the program id is an account like any other, placed under the seat's flags (a writable one
+  /// is not refused, a signing one at an unsigned seat is), and a seed naming its account index
+  /// resolves to it.
+  @Test
+  void theProgramIdAtASeatWithoutASentinelTakesTheSeatsFlags() {
+    final var requests = new java.util.ArrayList<SuppliedAccountsRequest>();
+    final var context = new MappingContext(STATE, VAULT, SIGNER, null, request -> {
+      requests.add(request);
+      return List.of(ROUTES, LEDGER, PRICE_A);
+    });
+    final var mapped = assertInstanceOf(MapResult.Mapped.class,
+        placedMapper().map(routeInstruction(AccountMeta.createWrite(PROGRAM), MAYBE), context));
+    assertEquals(List.of(
+        AccountMeta.createWrite(STATE),
+        AccountMeta.createRead(FIXED),
+        AccountMeta.createRead(ROUTES),
+        AccountMeta.createRead(PROGRAM),
+        AccountMeta.createWrite(LEDGER),
+        AccountMeta.createRead(MAYBE),
+        AccountMeta.createRead(PRICE_A),
+        AccountMeta.createWrite(EXTRA)
+    ), mapped.instruction().accounts());
+    assertEquals(new SuppliedAccountsRequest.Account(PROGRAM), requests.getFirst().roles().getFirst().derivation().seeds().get(3));
+
+    final var signing = placedMapper().map(routeInstruction(AccountMeta.createReadOnlySigner(PROGRAM), MAYBE), context);
+    assertEquals(UnsupportedReason.ACCOUNT_PRIVILEGE, assertInstanceOf(MapResult.Unsupported.class, signing).reason());
+    assertEquals(1, requests.size(), "a refusal at a seat asks the supplier nothing");
   }
 
   /// The accounts at an account index are required and named first in the count, the optional
