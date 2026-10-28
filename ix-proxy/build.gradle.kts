@@ -28,6 +28,47 @@ tasks.withType<Test>().configureEach {
   providers.gradleProperty("glamMappingsDir").orNull?.let { systemProperty("glam.mappings.dir", mappingsRoot.absolutePath) }
 }
 
+// Git-ignored scratch drivers (Integ.java and the like) live here, outside `main` and `test`.
+// Nothing in `check` compiles or runs them: `compileScratchJava` does the first on request and the
+// suite's test task is disabled; a driver is launched from the IDE or `java` with the suite's
+// class path. The AGENTS.md hardening block says why they live apart.
+testing {
+  suites {
+    register<JvmTestSuite>("scratch") {
+      dependencies {
+        implementation(project())
+        implementation("org.junit.jupiter:junit-jupiter-api")
+        runtimeOnly("org.junit.jupiter:junit-jupiter-engine")
+        runtimeOnly("org.junit.platform:junit-platform-launcher")
+      }
+      targets.all {
+        testTask.configure {
+          enabled = false
+        }
+      }
+    }
+  }
+}
+configurations.named("scratchImplementation") {
+  withDependencies {
+    removeIf { it.group == "org.junit.jupiter" && it.name == "junit-jupiter" }
+  }
+}
+
+// On the class path, not the module path: the module-testing plugin would otherwise compile the
+// suite into the main module as a whitebox test, where JUnit is not visible.
+javaModuleTesting {
+  classpath(testing.suites.getByName("scratch"))
+}
+
+// The suite declares its JUnit dependency itself and has no module-info for the scope check to
+// read; the dependency analysis would otherwise report it.
+dependencyAnalysis {
+  issues {
+    ignoreSourceSet("scratch")
+  }
+}
+
 hardening {
   mutation.register("ixProxy") {
     // the naked-receiver mutator fires here (the reader's fluent skip(), the path helpers),

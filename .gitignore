@@ -30,6 +30,7 @@
 !/ix-proxy/build.gradle.kts
 !/ix-proxy/config/
 !/ix-proxy/src/
+/ix-proxy/src/scratch/
 
 # Never tracked, wherever it turns up inside an unblocked directory (*.tmp covers the
 # hardening plugin's *.csv.tmp baseline-write temp)
