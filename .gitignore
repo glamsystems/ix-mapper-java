@@ -12,7 +12,9 @@
 !/README.md
 !/release-please-config.json
 
-# Gradle build and wrapper
+# Gradle build and wrapper; !/gradle/ also admits the dependency verification policy
+# (gradle/verification-metadata.xml, gradle/verification-keyring.keys and
+# gradle/verification/), which git would otherwise drop without a word
 !/gradle/
 !/gradle.properties
 !/gradlew

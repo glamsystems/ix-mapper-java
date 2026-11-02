@@ -72,12 +72,48 @@ consumer.
   `~/.gradle/gradle.properties`).
 - `./gradlew check` — full build + tests. CI (reusable workflows from
   sava-build) runs exactly this; keep it green.
+- Every artifact the build resolves, the settings plugins included, is
+  verified against `gradle/verification-metadata.xml`: signatures against the
+  public keys in `gradle/verification-keyring.keys`, the keys listed in
+  `gradle/verification/version-scoped-keys.txt` only at exact versions, and
+  SHA-256 pins for the few unsigned artifacts. `gradle.properties` carries the
+  declaration `org.gradle.dependency.verification=strict`, so sava-build's
+  `verificationPolicy` guard, part of `check`, fails the build when the policy
+  breaks its rules or goes missing; the rules and the update procedure, steps
+  1 to 5, are sava-build's README, "Verifying sava artifacts". Check a
+  dependency, BOM or policy change with
+  `./gradlew --no-daemon --no-configuration-cache check resolveVerificationTools`
+  (a reused configuration-cache entry resolves nothing and so verifies nothing;
+  `resolveVerificationTools` resolves the PIT and Jazzer artifacts that
+  otherwise only the mutation gate or a fuzz run would meet); validate a new
+  BOM or parent POM once more from an empty `GRADLE_USER_HOME` that holds only
+  the `org.gradle.java.*` lines of `~/.gradle/gradle.properties`, with the
+  GitHub Packages credentials passed as `ORG_GRADLE_PROJECT_savaGithubPackages*`
+  environment variables, since a warm cache hides metadata a cold one fetches;
+  and sync IntelliJ with download sources on, which alone exercises the
+  `gradle:gradle` rule (the Gradle sources zip) and the jmh plugin's
+  sources-jar pin. A refusal names the artifact; the README's step 2 and, for
+  a listed key, its section's heading in the list file say what to do. The
+  files are only ever edited in their own shape and stay Gradle's own output
+  for the graph, so a regeneration with no dependency change is a no-op; a key
+  is listed exactly when its rule carries a version, so those two edits go
+  together. `verificationKeyStatus` asks the key servers whether a trusted key
+  was revoked or has expired; it runs outside `check`, after a policy edit and
+  on the release checklist (README, "Key status").
 - To build against an unpublished sava-build change, publish sava-build's
   local test repo and run with
-  `-PsavaBuildLocalRepo=../sava-build/build/sava-test-repo` — the property
-  lives on the CLI or in `~/.gradle/gradle.properties`, never in the file.
-  The plugin announces local-repo resolution at the end of every such build;
-  a build that prints no notice did NOT run `0.0.0-test`.
+  `-PsavaBuildLocalRepo=../sava-build/build/sava-test-repo --dependency-verification lenient`
+  — the property lives on the CLI or in `~/.gradle/gradle.properties`, never
+  in the file, and a blank `-PsavaBuildLocalRepo=` clears an inherited one.
+  The test repo's artifacts are unsigned, so every run that carries the
+  property passes the flag: read each lenient run's "Dependency verification
+  failed" report and settle anything refused other than `0.0.0-test` before
+  pushing; never trust `0.0.0-test` in the policy, and never relax the mode in
+  a committed `gradle.properties`, which `verificationPolicy` refuses, nor in
+  `~/.gradle/gradle.properties`, which relaxes every build on the machine
+  where no guard sees it (sava-build's README, "Unpublished sava-build"). The
+  plugin announces local-repo resolution at the end of every such build; a
+  build that prints no notice did NOT run `0.0.0-test`.
 - Commits follow Conventional Commits (`feat: ...`, `fix: ...`);
   release-please cuts releases from them. Don't hand-edit versions or
   `CHANGELOG.md`. Tagged releases publish to GitHub Packages only
@@ -104,7 +140,8 @@ the user's say-so.
   here and listed on the tracking issue. `MappingDocumentParserTests` carries
   the contract's refusal table and the rows this parser adds. Tests never hit
   the network; the build's only network use is dependency and JDK
-  resolution.
+  resolution, and `verificationKeyStatus`, outside `check`, asking the key
+  servers and reading gradle/gradle's published verification policy.
 - Randomized tests use fixed seeds; nothing sleeps. Time-dependent code takes
   a clock seam, never the wall clock — give test clocks a non-zero origin.
 
@@ -221,8 +258,10 @@ multiply the run). Both `MapperConformanceTest` and `MapperVectorsTest` must
 still run under `check`. Changed mapping documents or conformance cases require
 a fresh history-free PIT observation even when the Java classes are unchanged.
 `hardeningCertify` and an explicit local `fuzzAll` campaign are owned by the
-local release checklist; `:hardeningCertifyAll` certifies every suite and also
-writes the root manifest `.pitest-history/pitest-certification-all.tsv`. This
+local release checklist, with `verificationKeyStatus` run from the root beside
+them (the lifecycle table in sava-build's HARDENING.md); `:hardeningCertifyAll`
+certifies every suite and also writes the root manifest
+`.pitest-history/pitest-certification-all.tsv`. This
 GLAM repo is outside the Sava ArcMutate certificate and certifies with
 open-source PIT.
 
