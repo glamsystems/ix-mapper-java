@@ -80,7 +80,7 @@ consumer.
   declaration `org.gradle.dependency.verification=strict`, so sava-build's
   `verificationPolicy` guard, part of `check`, fails the build when the policy
   breaks its rules or goes missing; the rules and the update procedure, steps
-  1 to 5, are sava-build's README, "Verifying sava artifacts". Check a
+  1 to 4, are sava-build's README, "Verifying sava artifacts". Check a
   dependency, BOM or policy change with
   `./gradlew --no-daemon --no-configuration-cache check resolveVerificationTools`
   (a reused configuration-cache entry resolves nothing and so verifies nothing;
@@ -89,11 +89,16 @@ consumer.
   BOM or parent POM once more from an empty `GRADLE_USER_HOME` that holds only
   the `org.gradle.java.*` lines of `~/.gradle/gradle.properties`, with the
   GitHub Packages credentials passed as `ORG_GRADLE_PROJECT_savaGithubPackages*`
-  environment variables, since a warm cache hides metadata a cold one fetches;
-  and sync IntelliJ with download sources on, which alone exercises the
-  `gradle:gradle` rule (the Gradle sources zip) and the jmh plugin's
-  sources-jar pin. A refusal names the artifact; the README's step 2 and, for
-  a listed key, its section's heading in the list file say what to do. The
+  environment variables, since a warm cache hides metadata a cold one fetches.
+  No IDE sync is owed after a policy change, and a session does not ask for
+  one. Only IntelliJ's sync, with download sources on, exercises some rules,
+  among them the `gradle:gradle` rule (the Gradle sources zip) and the jmh
+  plugin's sources-jar pin, so a trim keeps them; a session that removes or
+  narrows one, adds or moves an unsigned module's pins without its sources
+  jar's, or bumps the wrapper says so in its report, and a refusal shows in
+  the sync output (sava-build's README, the end of "Adopting and updating").
+  A command-line refusal names the artifact; the README's step 2 and, for a
+  listed key, its section's heading in the list file say what to do. The
   files are only ever edited in their own shape and stay Gradle's own output
   for the graph, so a regeneration with no dependency change is a no-op; a key
   is listed exactly when its rule carries a version, so those two edits go
