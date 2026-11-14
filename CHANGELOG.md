@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.2.1](https://github.com/glamsystems/ix-mapper-java/compare/25.2.0...25.2.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **build:** upgrade to Gradle 9.9 and scope plugin repositories ([9f5c840](https://github.com/glamsystems/ix-mapper-java/commit/9f5c8406b8cad24561d02edfe5a8d754055afe47))
+
 ## [25.2.0](https://github.com/glamsystems/ix-mapper-java/compare/25.1.1...25.2.0) (2026-10-05)
 
 
